@@ -163,12 +163,12 @@ export const login = async (
     const token = signToken(user._id.toString());
     user.password = null;
 
-    const isProduction = process.env.COOKIE_SECURE === "true";
+    const isSecure = req.secure || req.headers["x-forwarded-proto"] === "https";
 
     res.cookie("user_token", token, {
       httpOnly: true,
-      secure: isProduction,
-      sameSite: isProduction ? "none" : "lax",
+      secure: isSecure,
+      sameSite: isSecure ? "none" : "lax",
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
@@ -189,12 +189,12 @@ export const login = async (
 };
 
 export const logout = (req: Request, res: Response) => {
-  const isProduction = process.env.COOKIE_SECURE === "true";
+  const isSecure = req.secure || req.headers["x-forwarded-proto"] === "https";
 
   res.cookie("user_token", {
     httpOnly: true,
-    secure: isProduction,
-    sameSite: isProduction ? "none" : "lax",
+    secure: isSecure,
+    sameSite: isSecure ? "none" : "lax",
     maxAge: 7 * 24 * 60 * 60 * 1000,
   });
 
@@ -231,12 +231,13 @@ export const googleAuthCallback = (
         );
 
       const token = signToken(user.id);
-      const isProduction = process.env.COOKIE_SECURE === "true";
+      const isSecure =
+        req.secure || req.headers["x-forwarded-proto"] === "https";
 
       res.cookie("user_token", token, {
         httpOnly: true,
-        secure: isProduction,
-        sameSite: isProduction ? "none" : "lax",
+        secure: isSecure,
+        sameSite: isSecure ? "none" : "lax",
         maxAge: 7 * 24 * 60 * 60 * 1000,
       });
       res.redirect(`${process.env.FRONTEND_URL}/dashboard`);
