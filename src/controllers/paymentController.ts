@@ -237,8 +237,8 @@ export const initializePayment = async (req: Request, res: Response) => {
           ],
         },
 
-        // callback_url: `${process.env.FRONTEND_URL}/checkout/verifyPayment`,
-        callback_url: "http://localhost:3000/checkout/verifyPayment",
+        callback_url: `${process.env.FRONTEND_URL}/checkout/verifyPayment`,
+        // callback_url: "http://localhost:3000/checkout/verifyPayment",
       };
 
       // Call Paystack API
