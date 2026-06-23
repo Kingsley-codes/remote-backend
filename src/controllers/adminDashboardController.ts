@@ -622,7 +622,7 @@ export const createFarmer = async (req: Request, res: Response) => {
     // Type assertion here
     const file = req.files as { [fieldname: string]: Express.Multer.File[] };
 
-    if (!file || !file.profilePhoto || file?.profilePhoto?.[0]) {
+    if (!file || !file.profilePhoto) {
       return res.status(400).json({
         error: "Farmer's photo is required",
       });
