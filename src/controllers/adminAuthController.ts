@@ -65,12 +65,12 @@ export const adminLogin = async (
     const token = signToken(admin._id.toString());
     admin.password = null;
 
-    const isProduction = process.env.COOKIE_SECURE === "true";
+    const isSecure = req.secure || req.headers["x-forwarded-proto"] === "https";
 
     res.cookie("admin_token", token, {
       httpOnly: true,
-      secure: isProduction,
-      sameSite: isProduction ? "none" : "lax",
+      secure: isSecure,
+      sameSite: isSecure ? "none" : "lax",
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
@@ -118,12 +118,13 @@ export const googleAuthCallback = (
 
       const token = signToken(user.id);
 
-      const isProduction = process.env.COOKIE_SECURE === "true";
+      const isSecure =
+        req.secure || req.headers["x-forwarded-proto"] === "https";
 
       res.cookie("admin_token", token, {
         httpOnly: true,
-        secure: isProduction,
-        sameSite: isProduction ? "none" : "lax",
+        secure: isSecure,
+        sameSite: isSecure ? "none" : "lax",
         maxAge: 7 * 24 * 60 * 60 * 1000,
       });
 
@@ -133,12 +134,12 @@ export const googleAuthCallback = (
 };
 
 export const adminLogout = (req: Request, res: Response) => {
-  const isProduction = process.env.COOKIE_SECURE === "true";
+  const isSecure = req.secure || req.headers["x-forwarded-proto"] === "https";
 
   res.cookie("admin_token", {
     httpOnly: true,
-    secure: isProduction,
-    sameSite: isProduction ? "none" : "lax",
+    secure: isSecure,
+    sameSite: isSecure ? "none" : "lax",
     maxAge: 7 * 24 * 60 * 60 * 1000,
   });
 
