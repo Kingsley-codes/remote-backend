@@ -61,6 +61,12 @@ export const uploadFiles = multer({
   fileFilter,
 }).fields([{ name: "files", maxCount: 5 }]);
 
+export const uploadTicketImages = multer({
+  storage: produceStorage,
+  limits: { fileSize: MAX_FILE_SIZE, files: 4 },
+  fileFilter,
+}).fields([{ name: "images", maxCount: 4 }]);
+
 // 🚧 Middleware wrapper to catch Multer errors cleanly
 export const handleUploadErrors = (
   err: any,

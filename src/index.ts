@@ -1,7 +1,10 @@
 import "dotenv/config";
-import app from "./app.js";
+import app, { allowedOrigins } from "./app.js";
 import mongoose from "mongoose";
 import type { Request, Response } from "express";
+import { closeExpiredResolvedTickets } from "./controllers/ticketController.js";
+import { createServer } from "node:http";
+import { initializeRealtime } from "./realtime.js";
 
 const dev = process.env.NODE_ENV !== "production";
 
@@ -16,6 +19,8 @@ if (!MONGO_URI) {
 try {
   await mongoose.connect(MONGO_URI);
   console.log("MongoDB Connected Successfully");
+  await closeExpiredResolvedTickets();
+  setInterval(() => void closeExpiredResolvedTickets(), 60 * 60 * 1000).unref();
 } catch (error) {
   console.error("MongoDB Connection Error:", error);
   process.exit(1);
@@ -26,8 +31,9 @@ app.get("/api", (req: Request, res: Response) => {
   res.json({ message: "Hello from Express API!" });
 });
 
-app.listen(PORT, (err) => {
-  if (err) throw err;
+const httpServer = createServer(app);
+initializeRealtime(httpServer, allowedOrigins);
+httpServer.listen(PORT, () => {
   console.log(`Server running at http://localhost:${PORT}`);
 });
 

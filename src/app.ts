@@ -18,6 +18,8 @@ import "./config/passport.js";
 import adminDashboardRouter from "./routes/adminDashboardRoutes.js";
 import userDashboardRouter from "./routes/userDashboardRoutes.js";
 import devWithdrawRouter from "./routes/devWithdrawRoutes.js";
+import { userTicketRouter, adminTicketRouter } from "./routes/ticketRoutes.js";
+import { userPushRouter, adminPushRouter } from "./routes/pushRoutes.js";
 
 // Rate limiting configuration
 const limiter = rateLimit({
@@ -26,7 +28,7 @@ const limiter = rateLimit({
   message: "Too many requests from this IP, please try again later",
 });
 
-const allowedOrigins = [
+export const allowedOrigins = [
   process.env.FRONTEND_URL,
   process.env.FRONTEND_LOCALHOST,
 ].filter(Boolean) as string[];
@@ -77,5 +79,9 @@ app.use("/api/admin", adminRouter); // Register Admin routes
 app.use("/api/admin/produce", adminProduceRouter); // Register produce routes
 app.use("/api/admin/dashboard", adminDashboardRouter); // Register Admin users routes
 app.use("/api/payment", paymentRouter); // Register mentor dashboard routes
+app.use("/api/tickets", userTicketRouter);
+app.use("/api/admin/tickets", adminTicketRouter);
+app.use("/api/push", userPushRouter);
+app.use("/api/admin/push", adminPushRouter);
 
 export default app;
