@@ -9,21 +9,15 @@ const slugify = (value: string) =>
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "");
 
-const files = (req: Request) =>
-  (req.files as Record<string, Express.Multer.File[]> | undefined)?.media ?? [];
+const file = (req: Request, field: "heroImage" | "bodyMedia") =>
+  (req.files as Record<string, Express.Multer.File[]> | undefined)?.[field]?.[0];
 
-const upload = (req: Request) =>
-  Promise.all(
-    files(req).map(async (file) => {
-      const type = file.mimetype.startsWith("video/") ? "video" : "image";
-      const result = await uploadMediaToCloudinary(
-        file.buffer,
-        "remote-agric/agri-learn",
-        type,
-      );
-      return { type, url: result.secure_url, publicId: result.public_id };
-    }),
-  );
+const uploadFile = async (uploaded?: Express.Multer.File) => {
+  if (!uploaded) return undefined;
+  const type = uploaded.mimetype.startsWith("video/") ? "video" : "image";
+  const result = await uploadMediaToCloudinary(uploaded.buffer, "remote-agric/agri-learn", type);
+  return { type, url: result.secure_url, publicId: result.public_id };
+};
 
 export const listPublishedPosts = async (req: Request, res: Response) => {
   const posts = await AgriLearnPost.find({ status: "published" })
@@ -36,10 +30,15 @@ export const getPublishedPost = async (req: Request, res: Response) => {
   const post = await AgriLearnPost.findOne({
     slug: req.params.slug,
     status: "published",
-  }).populate("author", "firstName lastName name");
+  });
   if (!post)
     return res.status(404).json({ success: false, message: "Post not found" });
-  return res.json({ success: true, data: { post } });
+  const relatedPosts = await AgriLearnPost.find({
+    _id: { $ne: post._id },
+    status: "published",
+    category: post.category,
+  }).sort({ publishedAt: -1 }).limit(3).select("title slug excerpt category heroImage media publishedAt createdAt");
+  return res.json({ success: true, data: { post, relatedPosts } });
 };
 
 export const listAdminPosts = async (req: Request, res: Response) => {
@@ -58,6 +57,13 @@ export const createPost = async (req: Request, res: Response) => {
   let slug = base;
   let n = 2;
   while (await AgriLearnPost.exists({ slug })) slug = `${base}-${n++}`;
+  const heroImageFile = file(req, "heroImage");
+  if (!heroImageFile || !heroImageFile.mimetype.startsWith("image/"))
+    return res.status(400).json({ success: false, message: "A hero image is required" });
+  const [heroImage, bodyMedia] = await Promise.all([
+    uploadFile(heroImageFile),
+    uploadFile(file(req, "bodyMedia")),
+  ]);
   const post = await AgriLearnPost.create({
     title,
     slug,
@@ -65,8 +71,8 @@ export const createPost = async (req: Request, res: Response) => {
     content,
     category,
     status,
-    author: req.admin,
-    media: await upload(req),
+    heroImage,
+    bodyMedia,
     publishedAt: status === "published" ? new Date() : undefined,
   });
   return res.status(201).json({ success: true, data: { post } });
@@ -76,7 +82,9 @@ export const updatePost = async (req: Request, res: Response) => {
   const post = await AgriLearnPost.findById(req.params.postId);
   if (!post)
     return res.status(404).json({ success: false, message: "Post not found" });
-  const uploaded = await upload(req);
+  const heroImageFile = file(req, "heroImage");
+  if (heroImageFile && !heroImageFile.mimetype.startsWith("image/"))
+    return res.status(400).json({ success: false, message: "The hero media must be an image" });
   for (const key of [
     "title",
     "excerpt",
@@ -85,7 +93,12 @@ export const updatePost = async (req: Request, res: Response) => {
     "status",
   ] as const)
     if (req.body[key] !== undefined) (post as any)[key] = req.body[key];
-  if (uploaded.length) post.media.push(...(uploaded as any));
+  const [heroImage, bodyMedia] = await Promise.all([
+    uploadFile(heroImageFile),
+    uploadFile(file(req, "bodyMedia")),
+  ]);
+  if (heroImage) post.heroImage = heroImage as any;
+  if (bodyMedia) post.bodyMedia = bodyMedia as any;
   if (post.status === "published" && !post.publishedAt)
     post.publishedAt = new Date();
   await post.save();

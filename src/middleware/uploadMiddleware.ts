@@ -74,9 +74,12 @@ const postMediaFilter = (req: Request, file: Express.Multer.File, cb: FileFilter
 
 export const uploadPostMedia = multer({
   storage: produceStorage,
-  limits: { fileSize: 50 * 1024 * 1024, files: 6 },
+  limits: { fileSize: 50 * 1024 * 1024, files: 2 },
   fileFilter: postMediaFilter,
-}).fields([{ name: "media", maxCount: 6 }]);
+}).fields([
+  { name: "heroImage", maxCount: 1 },
+  { name: "bodyMedia", maxCount: 1 },
+]);
 
 export const uploadMediaToCloudinary = (fileBuffer: Buffer, folder: string, resourceType: "image" | "video") =>
   new Promise<CloudinaryUploadResult>((resolve, reject) => {
