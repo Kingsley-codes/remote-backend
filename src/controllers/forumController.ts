@@ -3,6 +3,7 @@ import ForumMessage from "../models/forumMessageModel.js";
 import Produce from "../models/produceModel.js";
 import Investment from "../models/investmentModel.js";
 import User from "../models/userModel.js";
+import { emitForumMessage } from "../realtime.js";
 
 const roomFilter = (room: string) => room === "general" ? { roomType: "general" } : { roomType: "produce", produce: room };
 
@@ -48,6 +49,7 @@ export const createMessage = async (req: Request, res: Response) => {
   const mentioned = await User.find({ username: { $in: names } }).select("_id");
   const message = await ForumMessage.create({ ...roomFilter(room), author: userId, body, parent: parent?._id ?? null, mentions: mentioned.map((item) => item._id) });
   await message.populate("author", "username firstName lastName profilePhoto");
+  emitForumMessage(room, message);
   return res.status(201).json({ success: true, message });
 };
 
