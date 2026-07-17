@@ -5,6 +5,7 @@ import Produce from "../models/produceModel.js";
 import Investment from "../models/investmentModel.js";
 import Withdrawal from "../models/withdrawalModel.js";
 import Wallet from "../models/walletModel.js";
+import { awardReferralCommission } from "../services/referralService.js";
 
 // Helper function to generate unique IDs
 export const generatePaymentID = () =>
@@ -58,6 +59,7 @@ export const handleChargeSuccess = async (eventData: PaystackEventData) => {
       duration: produce.duration,
       ROI: produce.ROI,
     });
+    await awardReferralCommission(payment.user.toString(), newInvestment._id.toString());
 
     produce.remainingUnit -= eventData.metadata.units;
     await produce.save();

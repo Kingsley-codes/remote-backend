@@ -9,6 +9,7 @@ import {
 } from "../interface/allInterfaces.js";
 import passport from "passport";
 import { UserJwtPayload } from "../config/passport.js"; // import the interface
+import Referral from "../models/referralModel.js";
 
 // Helper function to sign JWT tokens for User
 const signToken = (id: string): string => {
@@ -33,7 +34,7 @@ export const registerUser = async (
   res: Response,
 ) => {
   try {
-    const { firstName, lastName, email, password, confirmPassword } = req.body;
+    const { firstName, lastName, email, password, confirmPassword, referralCode } = req.body;
 
     // Validate user input
     if (!email || !password || !confirmPassword || !firstName || !lastName) {
@@ -87,13 +88,17 @@ export const registerUser = async (
       });
     } else {
       // Create new user
-      await User.create({
+      const referrer = referralCode ? await User.findOne({ farmerID: referralCode.trim().toUpperCase() }) : null;
+      if (referralCode && !referrer) return res.status(400).json({ status: "fail", message: "Invalid referral code" });
+      const newUser = await User.create({
         email,
         password: hashedPassword,
         firstName,
         lastName,
         farmerID: generateUSerID(),
+        referredBy: referrer?._id,
       });
+      if (referrer) await Referral.create({ referrer: referrer._id, referredUser: newUser._id, referralCode: referrer.farmerID });
     }
 
     // Respond with success

@@ -20,6 +20,8 @@ import userDashboardRouter from "./routes/userDashboardRoutes.js";
 import devWithdrawRouter from "./routes/devWithdrawRoutes.js";
 import { userTicketRouter, adminTicketRouter } from "./routes/ticketRoutes.js";
 import { userPushRouter, adminPushRouter } from "./routes/pushRoutes.js";
+import { agriLearnRouter, adminAgriLearnRouter } from "./routes/agriLearnRoutes.js";
+import { referralRouter, adminReferralRouter } from "./routes/referralRoutes.js";
 
 // Rate limiting configuration
 const limiter = rateLimit({
@@ -83,5 +85,9 @@ app.use("/api/tickets", userTicketRouter);
 app.use("/api/admin/tickets", adminTicketRouter);
 app.use("/api/push", userPushRouter);
 app.use("/api/admin/push", adminPushRouter);
+app.use("/api/agri-learn", agriLearnRouter);
+app.use("/api/admin/agri-learn", adminAgriLearnRouter);
+app.use("/api/referrals", referralRouter);
+app.use("/api/admin/referrals", adminReferralRouter);
 
 export default app;

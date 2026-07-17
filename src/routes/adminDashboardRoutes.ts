@@ -13,11 +13,13 @@ import {
   deleteFarmer,
   updateFundingStatus,
   markYieldReceived,
+  getDashboardOverview,
 } from "../controllers/adminDashboardController.js";
 import { adminAuthenticate } from "../middleware/authenticationMiddleware.js";
 import { uploadProducerImages } from "../middleware/uploadMiddleware.js";
 
 const adminDashboardRouter = express.Router();
+adminDashboardRouter.get("/overview", adminAuthenticate, getDashboardOverview);
 
 adminDashboardRouter.get("/users", adminAuthenticate, getAllUsers);
 adminDashboardRouter.post("/users/suspend", adminAuthenticate, suspendUser);

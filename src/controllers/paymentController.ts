@@ -20,6 +20,7 @@ import Investment from "../models/investmentModel.js";
 import Wallet from "../models/walletModel.js";
 import mongoose from "mongoose";
 import { generateUSerID } from "./authControllers.js";
+import { awardReferralCommission } from "../services/referralService.js";
 
 const handleWalletPayment = async (
   userId: string,
@@ -63,8 +64,7 @@ const handleWalletPayment = async (
 
     await newPayment.save({ session });
 
-    const newInvestment = await Investment.create(
-      {
+    const newInvestment = new Investment({
         user: userId,
         produce: produceId,
         orderID: generateOrderID(),
@@ -76,9 +76,9 @@ const handleWalletPayment = async (
         customerEmail: email,
         duration: duration,
         ROI: ROI,
-      },
-      { session },
-    );
+      });
+    await newInvestment.save({ session });
+    await awardReferralCommission(userId, newInvestment._id.toString(), session);
 
     // 5️⃣ Commit transaction
     await session.commitTransaction();
@@ -390,6 +390,7 @@ export const verifyPayment = async (
         duration: produce.duration,
         ROI: produce.ROI,
       });
+      await awardReferralCommission(payment.user.toString(), newInvestment._id.toString());
 
       produce.remainingUnit -= transactionData.metadata.units;
       await produce.save();

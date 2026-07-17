@@ -67,6 +67,27 @@ export const uploadTicketImages = multer({
   fileFilter,
 }).fields([{ name: "images", maxCount: 4 }]);
 
+const postMediaFilter = (req: Request, file: Express.Multer.File, cb: FileFilterCallback): void => {
+  const allowed = [...allowedMimeTypes, "video/mp4", "video/webm", "video/quicktime"];
+  allowed.includes(file.mimetype) ? cb(null, true) : cb(new Error("Only JPG, PNG, WEBP, MP4, WEBM, and MOV media are allowed") as any, false);
+};
+
+export const uploadPostMedia = multer({
+  storage: produceStorage,
+  limits: { fileSize: 50 * 1024 * 1024, files: 6 },
+  fileFilter: postMediaFilter,
+}).fields([{ name: "media", maxCount: 6 }]);
+
+export const uploadMediaToCloudinary = (fileBuffer: Buffer, folder: string, resourceType: "image" | "video") =>
+  new Promise<CloudinaryUploadResult>((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream({ folder, resource_type: resourceType }, (error, result) => {
+      if (error) return reject(error);
+      if (!result) return reject(new Error("Cloudinary upload failed"));
+      resolve(result);
+    });
+    streamifier.createReadStream(fileBuffer).pipe(stream);
+  });
+
 // 🚧 Middleware wrapper to catch Multer errors cleanly
 export const handleUploadErrors = (
   err: any,

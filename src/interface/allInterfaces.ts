@@ -9,6 +9,7 @@ export interface RegisterRequestBody {
   email: string;
   password: string;
   confirmPassword: string;
+  referralCode?: string;
 }
 
 export interface AuthResponse {

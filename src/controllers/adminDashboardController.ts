@@ -5,6 +5,7 @@ import { buildDateFilter } from "../utils/dateFilter.js";
 import Payment from "../models/paymentModel.js";
 import Withdrawal from "../models/withdrawalModel.js";
 import Farmer from "../models/farmerModel.js";
+import Produce from "../models/produceModel.js";
 import {
   deleteFromCloudinary,
   uploadToCloudinary,
@@ -15,6 +16,21 @@ type UserQuery = {
   isVerified?: "true" | "false";
   page?: string;
   q?: string;
+};
+
+export const getDashboardOverview = async (req: Request, res: Response) => {
+  try {
+    const sixMonthsAgo = new Date(); sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 5); sixMonthsAgo.setDate(1); sixMonthsAgo.setHours(0, 0, 0, 0);
+    const [investmentAgg, totalUsers, activeOpportunities, pendingWithdrawals, inflow, portfolio, recent] = await Promise.all([
+      Investment.aggregate([{ $match: { orderStatus: "confirmed" } }, { $group: { _id: null, total: { $sum: "$totalPrice" }, count: { $sum: 1 } } }]),
+      User.countDocuments(), Produce.countDocuments({ status: { $ne: "closed" } }),
+      Withdrawal.aggregate([{ $match: { status: "pending" } }, { $group: { _id: null, amount: { $sum: "$amount" }, count: { $sum: 1 } } }]),
+      Investment.aggregate([{ $match: { orderStatus: "confirmed", createdAt: { $gte: sixMonthsAgo } } }, { $group: { _id: { year: { $year: "$createdAt" }, month: { $month: "$createdAt" } }, amount: { $sum: "$totalPrice" } } }, { $sort: { "_id.year": 1, "_id.month": 1 } }]),
+      Investment.aggregate([{ $match: { orderStatus: "confirmed" } }, { $group: { _id: "$title", amount: { $sum: "$totalPrice" } } }, { $sort: { amount: -1 } }, { $limit: 5 }]),
+      Investment.find().sort({ createdAt: -1 }).limit(6).populate("user", "firstName lastName email").lean(),
+    ]);
+    res.json({ success: true, data: { stats: { totalInvestments: investmentAgg[0]?.total ?? 0, investmentCount: investmentAgg[0]?.count ?? 0, totalUsers, activeOpportunities, pendingWithdrawalAmount: pendingWithdrawals[0]?.amount ?? 0, pendingWithdrawalCount: pendingWithdrawals[0]?.count ?? 0 }, inflow, portfolio, recent } });
+  } catch (error: any) { res.status(500).json({ success: false, message: error.message }); }
 };
 
 export const getAllUsers = async (
@@ -432,11 +448,12 @@ export const getAllPayments = async (req: Request, res: Response) => {
     if (q) {
       const searchTerm = asString(q);
       if (searchTerm) {
-        filter.$or = [
+        const matchingUsers = await User.find({ $or: [
           { firstName: { $regex: searchTerm, $options: "i" } },
           { lastName: { $regex: searchTerm, $options: "i" } },
           { email: { $regex: searchTerm, $options: "i" } },
-        ];
+        ] }).select("_id");
+        filter.user = { $in: matchingUsers.map((user) => user._id) };
       }
     }
 
@@ -501,7 +518,7 @@ export const getAllWithdrawals = async (req: Request, res: Response) => {
       status &&
       ["pending", "success", "failed"].includes(asString(status) ?? "")
     ) {
-      filter.paymentStatus = asString(status);
+      filter.status = asString(status);
     }
 
     if (q) {

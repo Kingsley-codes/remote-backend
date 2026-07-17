@@ -33,6 +33,7 @@ const userSchema = new Schema(
       unique: true,
       required: true,
     },
+    referredBy: { type: Schema.Types.ObjectId, ref: "User", index: true },
     phone: {
       type: String,
       sparse: true,
