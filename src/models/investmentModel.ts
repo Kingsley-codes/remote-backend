@@ -49,8 +49,15 @@ const investmentSchema = new Schema(
     },
     stage: {
       type: String,
-      enum: ["pre-harvest", "harvest", "post-harvest"],
-      default: "pre-harvest",
+      enum: [
+        "accepting-investments",
+        "land-clearing",
+        "planting",
+        "growing",
+        "harvesting",
+        "returns-to-investment",
+      ],
+      default: "accepting-investments",
     },
     orderDate: {
       type: Date,

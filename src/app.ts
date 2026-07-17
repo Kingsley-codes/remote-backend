@@ -22,6 +22,8 @@ import { userTicketRouter, adminTicketRouter } from "./routes/ticketRoutes.js";
 import { userPushRouter, adminPushRouter } from "./routes/pushRoutes.js";
 import { agriLearnRouter, adminAgriLearnRouter } from "./routes/agriLearnRoutes.js";
 import { referralRouter, adminReferralRouter } from "./routes/referralRoutes.js";
+import forumRouter from "./routes/forumRoutes.js";
+import { notificationRouter, adminNotificationRouter } from "./routes/notificationRoutes.js";
 
 // Rate limiting configuration
 const limiter = rateLimit({
@@ -89,5 +91,8 @@ app.use("/api/agri-learn", agriLearnRouter);
 app.use("/api/admin/agri-learn", adminAgriLearnRouter);
 app.use("/api/referrals", referralRouter);
 app.use("/api/admin/referrals", adminReferralRouter);
+app.use("/api/forum", forumRouter);
+app.use("/api/notifications", notificationRouter);
+app.use("/api/admin/notifications", adminNotificationRouter);
 
 export default app;

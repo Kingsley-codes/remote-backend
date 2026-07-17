@@ -71,6 +71,16 @@ const userSchema = new Schema(
       type: String,
       enum: ["male", "female"],
     },
+    username: {
+      type: String,
+      unique: true,
+      sparse: true,
+      lowercase: true,
+      trim: true,
+      minlength: 3,
+      maxlength: 24,
+      match: /^[a-z0-9_]+$/,
+    },
   },
   { timestamps: true },
 );

@@ -29,8 +29,15 @@ const produceSchema = new Schema(
     },
     stage: {
       type: String,
-      enum: ["pre-harvest", "harvest", "post-harvest"],
-      default: "pre-harvest",
+      enum: [
+        "accepting-investments",
+        "land-clearing",
+        "planting",
+        "growing",
+        "harvesting",
+        "returns-to-investment",
+      ],
+      default: "accepting-investments",
     },
     status: {
       type: String,

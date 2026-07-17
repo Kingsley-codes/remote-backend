@@ -53,6 +53,20 @@ export const userAuthenticate = async (
   }
 };
 
+export const optionalUserAuthenticate = async (req: Request, _res: Response, next: NextFunction) => {
+  try {
+    const token = req.cookies.user_token;
+    if (token) {
+      const decoded = jwt.verify(token, process.env.JWT_SECRET as string) as UserJwtPayload;
+      const user = await User.exists({ _id: decoded.id, status: "active" });
+      if (user) req.user = user._id;
+    }
+  } catch {
+    // Public endpoints remain accessible when a cookie is missing or stale.
+  }
+  next();
+};
+
 export const adminAuthenticate = async (
   req: Request,
   res: Response,

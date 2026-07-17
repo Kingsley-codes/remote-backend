@@ -5,6 +5,8 @@ import {
   deleteFromCloudinary,
 } from "../middleware/uploadMiddleware.js";
 import { ProduceRequestBody } from "../interface/allInterfaces.js";
+import Investment from "../models/investmentModel.js";
+import { createProduceNotification } from "./notificationController.js";
 
 export const generateProduceID = () =>
   "GRP-" + Math.random().toString(36).substring(2, 10).toUpperCase();
@@ -419,10 +421,10 @@ export const activateProduce = async (
 
 export const updateProduceStage = async (req: Request, res: Response) => {
   try {
-    const { produceID } = req.params;
-    const { stage } = req.body;
+    const produceID = String(req.params.produceID);
+    const stage = String(req.body.stage ?? "");
 
-    const validStages = ["pre-harvest", "harvest", "post-harvest"];
+    const validStages = ["accepting-investments", "land-clearing", "planting", "growing", "harvesting", "returns-to-investment"];
 
     if (!validStages.includes(stage)) {
       return res.status(400).json({
@@ -445,11 +447,15 @@ export const updateProduceStage = async (req: Request, res: Response) => {
       });
     }
 
+    await Investment.updateMany({ produce: produceID, status: "ongoing" }, { stage });
+    const stageLabel = stage.split("-").map((word: string) => word.charAt(0).toUpperCase() + word.slice(1)).join(" ");
+    await createProduceNotification({ produceId: produceID, title: `${updatedProduce.produceName} stage updated`, message: `Your investment has moved to ${stageLabel}.`, type: "stage-change", adminId: req.admin });
+
     return res.status(200).json({
       success: true,
       message: "Produce stage updated successfully",
       data: {
-        produce: updatedProduce.produceID,
+        produce: updatedProduce,
         stage,
       },
     });
