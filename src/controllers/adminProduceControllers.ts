@@ -449,7 +449,7 @@ export const updateProduceStage = async (req: Request, res: Response) => {
 
     await Investment.updateMany({ produce: produceID, status: "ongoing" }, { stage });
     const stageLabel = stage.split("-").map((word: string) => word.charAt(0).toUpperCase() + word.slice(1)).join(" ");
-    await createProduceNotification({ produceId: produceID, title: `${updatedProduce.produceName} stage updated`, message: `Your investment has moved to ${stageLabel}.`, type: "stage-change", adminId: req.admin });
+    await createProduceNotification({ produceId: produceID, title: `${updatedProduce.produceName} stage updated`, message: `Your remote farm has moved to ${stageLabel}.`, type: "stage-change", adminId: req.admin });
 
     return res.status(200).json({
       success: true,

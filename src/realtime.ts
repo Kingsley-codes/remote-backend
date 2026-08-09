@@ -5,6 +5,7 @@ import User from "./models/userModel.js";
 import Admin from "./models/adminModel.js";
 import Ticket from "./models/ticketModel.js";
 import Produce from "./models/produceModel.js";
+import Investment from "./models/investmentModel.js";
 
 let io: Server | undefined;
 const cookieValue = (header: string | undefined, name: string) =>
@@ -27,8 +28,8 @@ export function initializeRealtime(server: HttpServer, origins: string[]) {
       socket.data.identity = { id: decoded.id, type: adminToken ? "admin" : "user" };
       next();
     } catch {
-      // Forum rooms are public to read, so an expired cookie becomes an
-      // anonymous socket. Protected ticket events still verify identity.
+      // General is public, so an expired cookie becomes an anonymous socket.
+      // Protected forum and ticket events still verify identity.
       socket.data.identity = null;
       next();
     }
@@ -43,7 +44,12 @@ export function initializeRealtime(server: HttpServer, origins: string[]) {
     });
     socket.on("ticket:leave", (ticketId: string) => socket.leave(`ticket:${ticketId}`));
     socket.on("forum:join", async (roomId: string, acknowledge?: (ok: boolean) => void) => {
-      const valid = roomId === "general" || Boolean(await Produce.exists({ _id: roomId, status: "active" }));
+      const identity = socket.data.identity as { id: string; type: "user" | "admin" } | null;
+      const valid = roomId === "general" || Boolean(
+        identity?.type === "user"
+        && await Produce.exists({ _id: roomId, status: "active" })
+        && await Investment.exists({ user: identity.id, produce: roomId, status: "ongoing", orderStatus: "confirmed" }),
+      );
       if (valid) socket.join(`forum:${roomId}`);
       acknowledge?.(valid);
     });

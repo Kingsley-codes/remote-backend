@@ -591,7 +591,7 @@ export const fetchSingleFarmer = async (
     const farmer = await Farmer.findById(farmerId);
     if (!farmer) {
       return res.status(404).json({
-        message: "Farmer not found",
+        message: "Producer not found",
       });
     }
 
@@ -641,7 +641,7 @@ export const createFarmer = async (req: Request, res: Response) => {
 
     if (!file || !file.profilePhoto) {
       return res.status(400).json({
-        error: "Farmer's photo is required",
+        error: "Producer's photo is required",
       });
     }
 
@@ -704,7 +704,7 @@ export const updateFarmer = async (
     if (!updatedFarmer) {
       return res.status(404).json({
         success: false,
-        message: "Farmer not found",
+        message: "Producer not found",
       });
     }
 
@@ -754,13 +754,13 @@ export const deleteFarmer = async (
 
     if (!deletedFarmer) {
       return res.status(404).json({
-        message: "Farmer not found",
+        message: "Producer not found",
       });
     }
 
     return res.status(200).json({
       success: true,
-      message: "Farmer deleted successfully",
+      message: "Producer deleted successfully",
     });
   } catch (error: any) {
     console.error("Error deleting farmer:", error);
@@ -788,7 +788,7 @@ export const updateFundingStatus = async (
 
     if (!updatedFarmer) {
       return res.status(404).json({
-        message: "Farmer not found",
+        message: "Producer not found",
       });
     }
 
@@ -821,7 +821,7 @@ export const markYieldReceived = async (
 
     if (!updatedFarmer) {
       return res.status(404).json({
-        message: "Farmer not found",
+        message: "Producer not found",
       });
     }
 
