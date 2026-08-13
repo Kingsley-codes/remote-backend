@@ -14,12 +14,14 @@ import {
   updateFundingStatus,
   markYieldReceived,
   getDashboardOverview,
+  getDashboardStats,
 } from "../controllers/adminDashboardController.js";
 import { adminAuthenticate } from "../middleware/authenticationMiddleware.js";
 import { uploadProducerImages } from "../middleware/uploadMiddleware.js";
 
 const adminDashboardRouter = express.Router();
 adminDashboardRouter.get("/overview", adminAuthenticate, getDashboardOverview);
+adminDashboardRouter.get('/stats', adminAuthenticate, getDashboardStats);
 
 adminDashboardRouter.get("/users", adminAuthenticate, getAllUsers);
 adminDashboardRouter.post("/users/suspend", adminAuthenticate, suspendUser);

@@ -33,6 +33,18 @@ export const getDashboardOverview = async (req: Request, res: Response) => {
   } catch (error: any) { res.status(500).json({ success: false, message: error.message }); }
 };
 
+export const getDashboardStats = async (req: Request, res: Response) => {
+  try {
+    const [totalUsers, activeUsers, totalFarmers, activeFarmers, fundedFarmers, activeOpportunities, listingValue, popular] = await Promise.all([
+      User.countDocuments(), User.countDocuments({ status: "active" }), Farmer.countDocuments(), Farmer.countDocuments({ status: "active" }), Farmer.countDocuments({ fundingStatus: "fully funded" }), Produce.countDocuments({ status: "active" }),
+      Produce.aggregate([{ $match: { status: "active" } }, { $group: { _id: null, total: { $sum: { $multiply: ["$price", "$totalUnit"] } } } }]),
+      Investment.aggregate([{ $match: { orderStatus: "confirmed" } }, { $group: { _id: "$title", units: { $sum: "$units" } } }, { $sort: { units: -1 } }, { $limit: 1 }]),
+    ]);
+    return res.json({ success: true, data: { users: { total: totalUsers, active: activeUsers }, farmers: { total: totalFarmers, active: activeFarmers, funded: fundedFarmers }, opportunities: { active: activeOpportunities, listingValue: listingValue[0]?.total ?? 0, mostPopular: popular[0]?._id ?? "No investments yet" } } });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, message: error.message ?? "Unable to load dashboard statistics" });
+  }
+};
 export const getAllUsers = async (
   req: Request<{}, {}, {}, UserQuery>,
   res: Response,
