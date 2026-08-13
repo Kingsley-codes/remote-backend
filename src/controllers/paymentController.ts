@@ -13,7 +13,6 @@ import {
   initializePaystackTransaction,
   verifyTransaction,
 } from "../utils/paystackUtils.js";
-import Payment from "../models/paymentModel.js";
 import crypto from "crypto";
 import Produce from "../models/produceModel.js";
 import Investment from "../models/investmentModel.js";
@@ -21,6 +20,7 @@ import Wallet from "../models/walletModel.js";
 import mongoose from "mongoose";
 import { generateUSerID } from "./authControllers.js";
 import { awardReferralCommission } from "../services/referralService.js";
+import Transaction from "../models/transactionModel.js";
 
 const handleWalletPayment = async (
   userId: string,
@@ -52,7 +52,7 @@ const handleWalletPayment = async (
 
     const paymentID = generatePaymentID();
 
-    const newPayment = new Payment({
+    const newPayment = new Transaction({
       user: userId,
       paymentID: paymentID,
       produce: produceId,
@@ -65,20 +65,24 @@ const handleWalletPayment = async (
     await newPayment.save({ session });
 
     const newInvestment = new Investment({
-        user: userId,
-        produce: produceId,
-        orderID: generateOrderID(),
-        payment: newPayment._id!,
-        title: produceTitle,
-        units: units,
-        totalPrice: amount,
-        orderStatus: "confirmed",
-        customerEmail: email,
-        duration: duration,
-        ROI: ROI,
-      });
+      user: userId,
+      produce: produceId,
+      orderID: generateOrderID(),
+      payment: newPayment._id!,
+      title: produceTitle,
+      units: units,
+      totalPrice: amount,
+      orderStatus: "confirmed",
+      customerEmail: email,
+      duration: duration,
+      ROI: ROI,
+    });
     await newInvestment.save({ session });
-    await awardReferralCommission(userId, newInvestment._id.toString(), session);
+    await awardReferralCommission(
+      userId,
+      newInvestment._id.toString(),
+      session,
+    );
 
     // 5️⃣ Commit transaction
     await session.commitTransaction();
@@ -254,7 +258,7 @@ export const initializePayment = async (req: Request, res: Response) => {
         });
       }
 
-      const payment = await Payment.create({
+      const payment = await Transaction.create({
         user: finalUserId,
         paymentID: paymentID,
         userEmail: email,
@@ -314,7 +318,7 @@ export const verifyPayment = async (
     const transactionData = verificationResponse.data;
 
     // Find donation record by transactionRef
-    const payment = await Payment.findOne({ transactionRef: reference });
+    const payment = await Transaction.findOne({ transactionRef: reference });
 
     if (!payment) {
       return res.status(404).json({
@@ -324,17 +328,17 @@ export const verifyPayment = async (
     }
 
     // If cancelled already, don't proceed
-    if (payment.paymentStatus === "Cancelled") {
+    if (payment.status === "cancelled") {
       return res.status(400).json({
         success: false,
         message: "Transaction was already marked as cancelled",
-        status: payment.paymentStatus,
+        status: payment.status,
       });
     }
 
     // If failed → mark failed
     if (transactionData.status === "failed") {
-      payment.paymentStatus = "Failed";
+      payment.status = "failed";
       await payment.save();
 
       return res.status(404).json({
@@ -345,7 +349,7 @@ export const verifyPayment = async (
 
     // ✅ Only proceed if Paystack says it's successful
     if (transactionData.status === "success") {
-      if (payment.paymentStatus === "Completed") {
+      if (payment.status === "completed") {
         // ✅ Handle second verification attempt gracefully
 
         const investment = await Investment.findOne({ payment: payment._id });
@@ -362,7 +366,7 @@ export const verifyPayment = async (
         });
       }
 
-      payment.paymentStatus = "Completed";
+      payment.status = "completed";
       payment.date = new Date();
 
       await payment.save();
@@ -390,7 +394,10 @@ export const verifyPayment = async (
         duration: produce.duration,
         ROI: produce.ROI,
       });
-      await awardReferralCommission(payment.user.toString(), newInvestment._id.toString());
+      await awardReferralCommission(
+        payment.user.toString(),
+        newInvestment._id.toString(),
+      );
 
       produce.remainingUnit -= transactionData.metadata.units;
       await produce.save();

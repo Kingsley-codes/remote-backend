@@ -2,14 +2,13 @@ import { Request, Response } from "express";
 import User from "../models/userModel.js";
 import Investment from "../models/investmentModel.js";
 import { buildDateFilter } from "../utils/dateFilter.js";
-import Payment from "../models/paymentModel.js";
-import Withdrawal from "../models/withdrawalModel.js";
 import Farmer from "../models/farmerModel.js";
 import Produce from "../models/produceModel.js";
 import {
   deleteFromCloudinary,
   uploadToCloudinary,
 } from "../middleware/uploadMiddleware.js";
+import Transaction from "../models/transactionModel.js";
 
 type UserQuery = {
   status?: "active" | "suspended" | "pending";
@@ -20,31 +19,155 @@ type UserQuery = {
 
 export const getDashboardOverview = async (req: Request, res: Response) => {
   try {
-    const sixMonthsAgo = new Date(); sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 5); sixMonthsAgo.setDate(1); sixMonthsAgo.setHours(0, 0, 0, 0);
-    const [investmentAgg, totalUsers, activeOpportunities, pendingWithdrawals, inflow, portfolio, recent] = await Promise.all([
-      Investment.aggregate([{ $match: { orderStatus: "confirmed" } }, { $group: { _id: null, total: { $sum: "$totalPrice" }, count: { $sum: 1 } } }]),
-      User.countDocuments(), Produce.countDocuments({ status: { $ne: "closed" } }),
-      Withdrawal.aggregate([{ $match: { status: "pending" } }, { $group: { _id: null, amount: { $sum: "$amount" }, count: { $sum: 1 } } }]),
-      Investment.aggregate([{ $match: { orderStatus: "confirmed", createdAt: { $gte: sixMonthsAgo } } }, { $group: { _id: { year: { $year: "$createdAt" }, month: { $month: "$createdAt" } }, amount: { $sum: "$totalPrice" } } }, { $sort: { "_id.year": 1, "_id.month": 1 } }]),
-      Investment.aggregate([{ $match: { orderStatus: "confirmed" } }, { $group: { _id: "$title", amount: { $sum: "$totalPrice" } } }, { $sort: { amount: -1 } }, { $limit: 5 }]),
-      Investment.find().sort({ createdAt: -1 }).limit(6).populate("user", "firstName lastName email").lean(),
+    const sixMonthsAgo = new Date();
+    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 5);
+    sixMonthsAgo.setDate(1);
+    sixMonthsAgo.setHours(0, 0, 0, 0);
+    const [
+      investmentAgg,
+      totalUsers,
+      activeOpportunities,
+      pendingWithdrawals,
+      inflow,
+      portfolio,
+      recent,
+    ] = await Promise.all([
+      Investment.aggregate([
+        { $match: { orderStatus: "confirmed" } },
+        {
+          $group: {
+            _id: null,
+            total: { $sum: "$totalPrice" },
+            count: { $sum: 1 },
+          },
+        },
+      ]),
+      User.countDocuments(),
+      Produce.countDocuments({ status: { $ne: "closed" } }),
+      Transaction.aggregate([
+        {
+          $match: {
+            transactionType: "withdrawal",
+            status: "pending",
+          },
+        },
+        {
+          $group: {
+            _id: null,
+            amount: { $sum: "$amount" },
+            count: { $sum: 1 },
+          },
+        },
+      ]),
+      Investment.aggregate([
+        {
+          $match: {
+            orderStatus: "confirmed",
+            createdAt: { $gte: sixMonthsAgo },
+          },
+        },
+        {
+          $group: {
+            _id: {
+              year: { $year: "$createdAt" },
+              month: { $month: "$createdAt" },
+            },
+            amount: { $sum: "$totalPrice" },
+          },
+        },
+        { $sort: { "_id.year": 1, "_id.month": 1 } },
+      ]),
+      Investment.aggregate([
+        { $match: { orderStatus: "confirmed" } },
+        { $group: { _id: "$title", amount: { $sum: "$totalPrice" } } },
+        { $sort: { amount: -1 } },
+        { $limit: 5 },
+      ]),
+      Investment.find()
+        .sort({ createdAt: -1 })
+        .limit(6)
+        .populate("user", "firstName lastName email")
+        .lean(),
     ]);
-    res.json({ success: true, data: { stats: { totalInvestments: investmentAgg[0]?.total ?? 0, investmentCount: investmentAgg[0]?.count ?? 0, totalUsers, activeOpportunities, pendingWithdrawalAmount: pendingWithdrawals[0]?.amount ?? 0, pendingWithdrawalCount: pendingWithdrawals[0]?.count ?? 0 }, inflow, portfolio, recent } });
-  } catch (error: any) { res.status(500).json({ success: false, message: error.message }); }
+    res.json({
+      success: true,
+      data: {
+        stats: {
+          totalInvestments: investmentAgg[0]?.total ?? 0,
+          investmentCount: investmentAgg[0]?.count ?? 0,
+          totalUsers,
+          activeOpportunities,
+          pendingWithdrawalAmount: pendingWithdrawals[0]?.amount ?? 0,
+          pendingWithdrawalCount: pendingWithdrawals[0]?.count ?? 0,
+        },
+        inflow,
+        portfolio,
+        recent,
+      },
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
 };
 
 export const getDashboardStats = async (req: Request, res: Response) => {
   try {
-    const [totalUsers, activeUsers, totalFarmers, activeFarmers, fundedFarmers, activeOpportunities, listingValue, popular] = await Promise.all([
-      User.countDocuments(), User.countDocuments({ status: "active" }), Farmer.countDocuments(), Farmer.countDocuments({ status: "active" }), Farmer.countDocuments({ fundingStatus: "fully funded" }), Produce.countDocuments({ status: "active" }),
-      Produce.aggregate([{ $match: { status: "active" } }, { $group: { _id: null, total: { $sum: { $multiply: ["$price", "$totalUnit"] } } } }]),
-      Investment.aggregate([{ $match: { orderStatus: "confirmed" } }, { $group: { _id: "$title", units: { $sum: "$units" } } }, { $sort: { units: -1 } }, { $limit: 1 }]),
+    const [
+      totalUsers,
+      activeUsers,
+      totalFarmers,
+      activeFarmers,
+      fundedFarmers,
+      activeOpportunities,
+      listingValue,
+      popular,
+    ] = await Promise.all([
+      User.countDocuments(),
+      User.countDocuments({ status: "active" }),
+      Farmer.countDocuments(),
+      Farmer.countDocuments({ status: "active" }),
+      Farmer.countDocuments({ fundingStatus: "fully funded" }),
+      Produce.countDocuments({ status: "active" }),
+      Produce.aggregate([
+        { $match: { status: "active" } },
+        {
+          $group: {
+            _id: null,
+            total: { $sum: { $multiply: ["$price", "$totalUnit"] } },
+          },
+        },
+      ]),
+      Investment.aggregate([
+        { $match: { orderStatus: "confirmed" } },
+        { $group: { _id: "$title", units: { $sum: "$units" } } },
+        { $sort: { units: -1 } },
+        { $limit: 1 },
+      ]),
     ]);
-    return res.json({ success: true, data: { users: { total: totalUsers, active: activeUsers }, farmers: { total: totalFarmers, active: activeFarmers, funded: fundedFarmers }, opportunities: { active: activeOpportunities, listingValue: listingValue[0]?.total ?? 0, mostPopular: popular[0]?._id ?? "No investments yet" } } });
+    return res.json({
+      success: true,
+      data: {
+        users: { total: totalUsers, active: activeUsers },
+        farmers: {
+          total: totalFarmers,
+          active: activeFarmers,
+          funded: fundedFarmers,
+        },
+        opportunities: {
+          active: activeOpportunities,
+          listingValue: listingValue[0]?.total ?? 0,
+          mostPopular: popular[0]?._id ?? "No investments yet",
+        },
+      },
+    });
   } catch (error: any) {
-    return res.status(500).json({ success: false, message: error.message ?? "Unable to load dashboard statistics" });
+    return res.status(500).json({
+      success: false,
+      message: error.message ?? "Unable to load dashboard statistics",
+    });
   }
 };
+
 export const getAllUsers = async (
   req: Request<{}, {}, {}, UserQuery>,
   res: Response,
@@ -415,6 +538,7 @@ export const getInvestments = async (req: Request, res: Response) => {
 export const getAllPayments = async (req: Request, res: Response) => {
   try {
     const admin = req.admin;
+
     if (!admin) {
       return res.status(401).json({
         success: false,
@@ -422,18 +546,20 @@ export const getAllPayments = async (req: Request, res: Response) => {
       });
     }
 
-    const { paymentStatus, q, date, startDate, endDate, paymentMethod, page } =
+    const { status, q, date, startDate, endDate, paymentMethod, page } =
       req.query;
 
-    // Helper to safely extract a plain string from query params
-    const asString = (val: typeof q): string | undefined =>
+    const asString = (val: unknown): string | undefined =>
       typeof val === "string" ? val : undefined;
 
     const pageNumber = Math.max(parseInt(asString(page) ?? "1", 10) || 1, 1);
+
     const limit = 10;
     const skip = (pageNumber - 1) * limit;
 
+    // Always fetch investment payments only
     const filter: any = {
+      transactionType: "investment-payment",
       ...buildDateFilter({
         date: asString(date),
         startDate: asString(startDate),
@@ -441,42 +567,59 @@ export const getAllPayments = async (req: Request, res: Response) => {
       }),
     };
 
-    if (
-      paymentStatus &&
-      ["Pending", "Refunded", "Completed", "Cancelled", "Failed"].includes(
-        asString(paymentStatus) ?? "",
-      )
-    ) {
-      filter.paymentStatus = asString(paymentStatus);
+    // Filter by payment status
+    const validStatuses = [
+      "pending",
+      "completed",
+      "refunded",
+      "cancelled",
+      "failed",
+    ];
+
+    const statusValue = asString(status);
+
+    if (statusValue && validStatuses.includes(statusValue)) {
+      filter.status = statusValue;
     }
 
+    // Filter by payment method
+    const validPaymentMethods = ["card", "bank", "wallet"];
+
+    const paymentMethodValue = asString(paymentMethod);
+
     if (
-      paymentMethod &&
-      ["card", "bank", "wallet"].includes(asString(paymentMethod) ?? "")
+      paymentMethodValue &&
+      validPaymentMethods.includes(paymentMethodValue)
     ) {
-      filter.paymentMethod = asString(paymentMethod);
+      filter.paymentMethod = paymentMethodValue;
     }
 
-    if (q) {
-      const searchTerm = asString(q);
-      if (searchTerm) {
-        const matchingUsers = await User.find({ $or: [
+    // Search users
+    const searchTerm = asString(q);
+
+    if (searchTerm) {
+      const matchingUsers = await User.find({
+        $or: [
           { firstName: { $regex: searchTerm, $options: "i" } },
           { lastName: { $regex: searchTerm, $options: "i" } },
           { email: { $regex: searchTerm, $options: "i" } },
-        ] }).select("_id");
-        filter.user = { $in: matchingUsers.map((user) => user._id) };
-      }
+        ],
+      }).select("_id");
+
+      filter.user = {
+        $in: matchingUsers.map((user) => user._id),
+      };
     }
 
     const [allPayments, total] = await Promise.all([
-      Payment.find(filter)
+      Transaction.find(filter)
         .populate("user", "firstName lastName profilePhoto email")
         .populate("produce", "title")
         .skip(skip)
         .limit(limit)
         .sort({ createdAt: -1 }),
-      Payment.countDocuments(filter),
+
+      Transaction.countDocuments(filter),
     ]);
 
     return res.status(200).json({
@@ -519,6 +662,7 @@ export const getAllWithdrawals = async (req: Request, res: Response) => {
     const skip = (pageNumber - 1) * limit;
 
     const filter: any = {
+      transactionType: "withdrawal",
       ...buildDateFilter({
         date: asString(date),
         startDate: asString(startDate),
@@ -528,7 +672,7 @@ export const getAllWithdrawals = async (req: Request, res: Response) => {
 
     if (
       status &&
-      ["pending", "success", "failed"].includes(asString(status) ?? "")
+      ["pending", "completed", "failed"].includes(asString(status) ?? "")
     ) {
       filter.status = asString(status);
     }
@@ -545,12 +689,12 @@ export const getAllWithdrawals = async (req: Request, res: Response) => {
     }
 
     const [allWithdrawals, total] = await Promise.all([
-      Withdrawal.find(filter)
+      Transaction.find(filter)
         .populate("user", "firstName lastName profilePhoto email")
         .skip(skip)
         .limit(limit)
         .sort({ createdAt: -1 }),
-      Withdrawal.countDocuments(filter),
+      Transaction.countDocuments(filter),
     ]);
 
     return res.status(200).json({
@@ -574,7 +718,7 @@ export const getAllWithdrawals = async (req: Request, res: Response) => {
 
 // Helper function to generate unique donor IDs
 export const generateFarmerID = () =>
-  "GRF-" + Math.random().toString(36).substring(2, 10).toUpperCase();
+  "RAF-" + Math.random().toString(36).substring(2, 10).toUpperCase();
 
 export const getAllFarmers = async (req: Request, res: Response) => {
   try {

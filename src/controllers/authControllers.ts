@@ -26,7 +26,7 @@ const signToken = (id: string): string => {
 
 // Helper function to generate unique donor IDs
 export const generateUSerID = () =>
-  "AGU-" + Math.random().toString(36).substring(2, 10).toUpperCase();
+  "RAU-" + Math.random().toString(36).substring(2, 10).toUpperCase();
 
 // User Registration
 export const registerUser = async (
@@ -34,7 +34,14 @@ export const registerUser = async (
   res: Response,
 ) => {
   try {
-    const { firstName, lastName, email, password, confirmPassword, referralCode } = req.body;
+    const {
+      firstName,
+      lastName,
+      email,
+      password,
+      confirmPassword,
+      referralCode,
+    } = req.body;
 
     // Validate user input
     if (!email || !password || !confirmPassword || !firstName || !lastName) {
@@ -88,8 +95,13 @@ export const registerUser = async (
       });
     } else {
       // Create new user
-      const referrer = referralCode ? await User.findOne({ farmerID: referralCode.trim().toUpperCase() }) : null;
-      if (referralCode && !referrer) return res.status(400).json({ status: "fail", message: "Invalid referral code" });
+      const referrer = referralCode
+        ? await User.findOne({ farmerID: referralCode.trim().toUpperCase() })
+        : null;
+      if (referralCode && !referrer)
+        return res
+          .status(400)
+          .json({ status: "fail", message: "Invalid referral code" });
       const newUser = await User.create({
         email,
         password: hashedPassword,
@@ -98,7 +110,12 @@ export const registerUser = async (
         farmerID: generateUSerID(),
         referredBy: referrer?._id,
       });
-      if (referrer) await Referral.create({ referrer: referrer._id, referredUser: newUser._id, referralCode: referrer.farmerID });
+      if (referrer)
+        await Referral.create({
+          referrer: referrer._id,
+          referredUser: newUser._id,
+          referralCode: referrer.farmerID,
+        });
     }
 
     // Respond with success

@@ -14,7 +14,7 @@ const investmentSchema = new Schema(
     },
     payment: {
       type: String,
-      ref: "Payment",
+      ref: "Transaction",
       required: true,
     },
     produce: {

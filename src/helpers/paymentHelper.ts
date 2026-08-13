@@ -1,18 +1,17 @@
 import crypto from "crypto";
-import Payment from "../models/paymentModel.js";
 import { PaystackEventData } from "../interface/allInterfaces.js";
 import Produce from "../models/produceModel.js";
 import Investment from "../models/investmentModel.js";
-import Withdrawal from "../models/withdrawalModel.js";
 import Wallet from "../models/walletModel.js";
 import { awardReferralCommission } from "../services/referralService.js";
+import Transaction from "../models/transactionModel.js";
 
 // Helper function to generate unique IDs
 export const generatePaymentID = () =>
-  "GRI-" + Math.random().toString(36).substring(2, 10).toUpperCase();
+  "RAI-" + Math.random().toString(36).substring(2, 10).toUpperCase();
 
 export const generateOrderID = () =>
-  "GRO-" + Math.random().toString(36).substring(2, 10).toUpperCase();
+  "RAO-" + Math.random().toString(36).substring(2, 10).toUpperCase();
 
 export const generateReference = (prefix = "ps") => {
   const unique = crypto.randomBytes(12).toString("hex"); // 12-char random string
@@ -23,7 +22,7 @@ export const handleChargeSuccess = async (eventData: PaystackEventData) => {
   let payment = null;
 
   try {
-    payment = await Payment.findOne({
+    payment = await Transaction.findOne({
       transactionRef: eventData.reference,
     });
 
@@ -36,7 +35,7 @@ export const handleChargeSuccess = async (eventData: PaystackEventData) => {
     }
 
     payment.date = new Date(eventData.paid_at);
-    payment.paymentStatus = "Completed";
+    payment.status = "completed";
     await payment.save();
 
     const produce = await Produce.findById(payment.produce);
@@ -59,7 +58,10 @@ export const handleChargeSuccess = async (eventData: PaystackEventData) => {
       duration: produce.duration,
       ROI: produce.ROI,
     });
-    await awardReferralCommission(payment.user.toString(), newInvestment._id.toString());
+    await awardReferralCommission(
+      payment.user.toString(),
+      newInvestment._id.toString(),
+    );
 
     produce.remainingUnit -= eventData.metadata.units;
     await produce.save();
@@ -76,12 +78,12 @@ export const handleChargeSuccess = async (eventData: PaystackEventData) => {
 export const handleChargeFailed = async (eventData: PaystackEventData) => {
   console.log("Charge failed or was abandoned for ref:", eventData.reference);
 
-  const payment = await Payment.findOne({
+  const payment = await Transaction.findOne({
     transactionRef: eventData.reference,
   });
 
-  if (payment && payment.paymentStatus === "Pending") {
-    payment.paymentStatus = "Failed";
+  if (payment && payment.status === "pending") {
+    payment.status = "failed";
     await payment.save();
     console.log(`Payment ${eventData.reference} marked Failed.`);
   }
@@ -90,9 +92,9 @@ export const handleChargeFailed = async (eventData: PaystackEventData) => {
 export const handleTransferSuccess = async (data: any) => {
   const reference = data.reference;
 
-  const withdrawal = await Withdrawal.findOneAndUpdate(
-    { reference, status: "pending" },
-    { status: "success" },
+  const withdrawal = await Transaction.findOneAndUpdate(
+    { transactionRef: reference, status: "pending" },
+    { status: "completed" },
     { new: true },
   );
 
@@ -107,8 +109,8 @@ export const handleTransferSuccess = async (data: any) => {
 export const handleTransferFailed = async (data: any) => {
   const reference = data.reference;
 
-  const withdrawal = await Withdrawal.findOneAndUpdate(
-    { reference, status: "pending" },
+  const withdrawal = await Transaction.findOneAndUpdate(
+    { transactionRef: reference, status: "pending" },
     { status: "failed" },
     { new: true },
   );

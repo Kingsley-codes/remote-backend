@@ -6,70 +6,158 @@ import User from "../models/userModel.js";
 import bcrypt from "bcrypt";
 import mongoose from "mongoose";
 import Wallet from "../models/walletModel.js";
-import Withdrawal from "../models/withdrawalModel.js";
 import { generateReference } from "../helpers/paymentHelper.js";
 import axios from "axios";
-import Payment from "../models/paymentModel.js";
-import Referral from "../models/referralModel.js";
+import Transaction from "../models/transactionModel.js";
 
 export const getUserDashboardOverview = async (req: Request, res: Response) => {
   try {
     const userId = req.user;
-    if (!userId) return res.status(401).json({ success: false, message: "Unauthorized" });
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized Access",
+      });
+    }
 
     const [userInvestments, wallet] = await Promise.all([
-      Investment.find({ user: userId }).populate("produce", "produceName title stage image1 image2 image3").populate("payment", "amount status").sort({ orderDate: -1 }),
+      Investment.find({ user: userId })
+        .populate("produce", "produceName title stage image1 image2 image3")
+        .populate("payment", "amount status")
+        .sort({ orderDate: -1 }),
       Wallet.findOne({ user: userId }),
     ]);
-    const activeInvestments = userInvestments.filter((investment) => investment.status === "ongoing");
-    const totalInvestedAmount = userInvestments.reduce((total, investment) => total + investment.totalPrice, 0);
-    const totalProjectedROI = activeInvestments.reduce((total, investment) => total + ((investment.totalPrice * Number(investment.ROI || 0)) / 100), 0);
+    const activeInvestments = userInvestments.filter(
+      (investment) => investment.status === "ongoing",
+    );
+    const totalInvestedAmount = userInvestments.reduce(
+      (total, investment) => total + investment.totalPrice,
+      0,
+    );
+    const totalProjectedROI = activeInvestments.reduce(
+      (total, investment) =>
+        total + (investment.totalPrice * Number(investment.ROI || 0)) / 100,
+      0,
+    );
 
-    return res.json({ success: true, data: {
-      walletBalance: wallet?.balance ?? 0,
-      userInvestments,
-      totalInvestedAmount,
-      totalActiveInvestments: activeInvestments.length,
-      totalProjectedROI,
-    } });
+    return res.json({
+      success: true,
+      data: {
+        walletBalance: wallet?.balance ?? 0,
+        userInvestments,
+        totalInvestedAmount,
+        totalActiveInvestments: activeInvestments.length,
+        totalProjectedROI,
+      },
+    });
   } catch (error: any) {
-    return res.status(500).json({ success: false, message: error.message ?? "Unable to load dashboard overview" });
+    return res.status(500).json({
+      success: false,
+      message: error.message ?? "Unable to load dashboard overview",
+    });
   }
 };
-export const getUserTransactionHistory = async (req: Request, res: Response) => {
+
+export const getUserTransactionHistory = async (
+  req: Request,
+  res: Response,
+) => {
   try {
     const userId = req.user;
-    if (!userId) return res.status(401).json({ success: false, message: "Unauthorized" });
 
-    const [payments, withdrawals, referrals] = await Promise.all([
-      Payment.find({ user: userId }).populate("produce", "produceName title").sort({ createdAt: -1 }).lean(),
-      Withdrawal.find({ user: userId }).sort({ createdAt: -1 }).lean(),
-      Referral.find({ referrer: userId, status: "rewarded" }).populate("referredUser", "firstName lastName").sort({ rewardedAt: -1, createdAt: -1 }).lean(),
-    ]);
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized",
+      });
+    }
 
-    const transactions = [
-      ...payments.map((payment) => ({
-        id: payment._id.toString(), type: "investment-payment" as const, reference: payment.transactionRef || payment.paymentID,
-        title: "Farm investment", subtitle: `${(payment.produce as any)?.produceName || (payment.produce as any)?.title || "Farm ownership"} · ${payment.paymentMethod}`,
-        amount: payment.amount, direction: "debit" as const, status: payment.paymentStatus, createdAt: payment.date || payment.createdAt,
-      })),
-      ...withdrawals.map((withdrawal) => ({
-        id: withdrawal._id.toString(), type: "withdrawal" as const, reference: withdrawal.reference,
-        title: "Withdrawal to bank", subtitle: "Transfer to your linked bank account",
-        amount: withdrawal.amount, direction: "debit" as const, status: withdrawal.status, createdAt: withdrawal.createdAt,
-      })),
-      ...referrals.map((referral) => ({
-        id: referral._id.toString(), type: "referral-bonus" as const, reference: `REF-${referral._id.toString().slice(-8).toUpperCase()}`,
-        title: "Referral bonus", subtitle: `Bonus for ${(referral.referredUser as any)?.firstName || "a referred user"}`,
-        amount: referral.commission, direction: "credit" as const, status: "completed", createdAt: referral.rewardedAt || referral.createdAt,
-      })),
-    ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    const transactions = await Transaction.find({
+      user: userId,
+    })
+      .populate("produce", "produceName title")
+      .sort({ createdAt: -1 })
+      .lean();
 
-    return res.json({ success: true, data: { transactions } });
+    const history = transactions
+      .map((transaction) => {
+        const produce = transaction.produce as any;
+
+        switch (transaction.transactionType) {
+          case "investment-payment":
+            return {
+              id: transaction._id.toString(),
+              type: "investment-payment" as const,
+              reference: transaction.transactionRef,
+              transactionID: transaction.transactionID,
+              title: "Farm investment",
+              subtitle: `${produce?.produceName || produce?.title || "Farm ownership"}${
+                transaction.paymentMethod
+                  ? ` · ${transaction.paymentMethod}`
+                  : ""
+              }`,
+              amount: transaction.amount,
+              currency: transaction.currency,
+              direction: "debit" as const,
+              status: transaction.status,
+              paymentMethod: transaction.paymentMethod,
+              createdAt: transaction.createdAt,
+            };
+
+          case "withdrawal":
+            return {
+              id: transaction._id.toString(),
+              type: "withdrawal" as const,
+              reference: transaction.transactionRef,
+              transactionID: transaction.transactionID,
+              title: "Withdrawal to bank",
+              subtitle: "Transfer to your linked bank account",
+              amount: transaction.amount,
+              currency: transaction.currency,
+              direction: "debit" as const,
+              status: transaction.status,
+              createdAt: transaction.createdAt,
+            };
+
+          case "referral-reward":
+            return {
+              id: transaction._id.toString(),
+              type: "referral-reward" as const,
+              transactionID: transaction.transactionID,
+              title: "Referral bonus",
+              subtitle: `Bonus for ${
+                (transaction.referredUser as any)?.firstName ||
+                "a referred user"
+              }`,
+              amount: transaction.amount,
+              currency: transaction.currency,
+              direction: "credit" as const,
+              status: transaction.status,
+              createdAt: transaction.createdAt,
+            };
+
+          default:
+            return null;
+        }
+      })
+      .filter(Boolean);
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        transactions: history,
+      },
+    });
   } catch (error: any) {
-    return res.status(500).json({ success: false, message: error.message ?? "Unable to load transaction history" });
+    console.error("Transaction history error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: error.message ?? "Unable to load transaction history",
+    });
   }
 };
+
 export const getUserInvestments = async (req: Request, res: Response) => {
   try {
     const userId = req.user;
@@ -269,11 +357,11 @@ export const withdrawBalance = async (req: Request, res: Response) => {
       }
 
       // 4. Create withdrawal (PENDING)
-      const withdrawal = new Withdrawal({
+      const withdrawal = new Transaction({
         user: userId,
         amount,
         status: "pending",
-        reference: withdrawalReference,
+        transactionRef: withdrawalReference,
       });
 
       await withdrawal.save({ session });
@@ -290,9 +378,9 @@ export const withdrawBalance = async (req: Request, res: Response) => {
       });
 
       // Save reference (DO NOT mark success yet)
-      await Withdrawal.updateOne(
+      await Transaction.updateOne(
         { _id: withdrawalId },
-        { reference: transfer.reference },
+        { transactionRef: transfer.reference },
       );
 
       return res.json({
@@ -321,7 +409,7 @@ export const withdrawBalance = async (req: Request, res: Response) => {
         },
       );
 
-      await Withdrawal.updateOne({ _id: withdrawalId }, { status: "failed" });
+      await Transaction.updateOne({ _id: withdrawalId }, { status: "failed" });
 
       return res.status(500).json({
         success: false,
