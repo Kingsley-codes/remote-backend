@@ -72,12 +72,19 @@ export const getUserTransactionHistory = async (
       });
     }
 
-    const transactions = await Transaction.find({
-      user: userId,
-    })
-      .populate("produce", "produceName title")
-      .sort({ createdAt: -1 })
-      .lean();
+    // pagination
+    const page = Math.max(Number(req.query.page) || 1, 1);
+    const limit = Math.max(Number(req.query.limit) || 10, 1);
+
+    const [transactions, total] = await Promise.all([
+      Transaction.find({ user: userId })
+        .populate("produce", "produceName title")
+        .sort({ createdAt: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .lean(),
+      Transaction.countDocuments({ user: userId }),
+    ]);
 
     const history = transactions
       .map((transaction) => {
@@ -155,6 +162,40 @@ export const getUserTransactionHistory = async (
       success: false,
       message: error.message ?? "Unable to load transaction history",
     });
+  }
+};
+
+export const getUserTransactionById = async (req: Request, res: Response) => {
+  try {
+    const userId = req.user;
+    const { id } = req.params;
+
+    if (!userId) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+
+    if (!id) {
+      return res.status(400).json({ success: false, message: "Missing id" });
+    }
+
+    const transaction = await Transaction.findOne({ _id: id, user: userId })
+      .populate("produce", "produceName title description price")
+      .populate("referredUser", "firstName lastName email")
+      .lean();
+
+    if (!transaction) {
+      return res.status(404).json({ success: false, message: "Not found" });
+    }
+
+    return res.status(200).json({ success: true, data: { transaction } });
+  } catch (error: any) {
+    console.error("Get transaction error:", error);
+    return res
+      .status(500)
+      .json({
+        success: false,
+        message: error.message ?? "Unable to get transaction",
+      });
   }
 };
 
