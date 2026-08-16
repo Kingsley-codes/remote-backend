@@ -2,6 +2,7 @@ import crypto from "crypto";
 import { PaystackEventData } from "../interface/allInterfaces.js";
 import Produce from "../models/produceModel.js";
 import Investment from "../models/investmentModel.js";
+import User from "../models/userModel.js";
 import Wallet from "../models/walletModel.js";
 import { awardReferralCommission } from "../services/referralService.js";
 import Transaction from "../models/transactionModel.js";
@@ -63,8 +64,22 @@ export const handleChargeSuccess = async (eventData: PaystackEventData) => {
       newInvestment._id.toString(),
     );
 
+    const hasActiveInvestment = await Investment.exists({
+      user: payment.user,
+      orderStatus: "confirmed",
+      status: "ongoing",
+    });
+
+    await User.findByIdAndUpdate(payment.user, {
+      hasActiveInvestment: Boolean(hasActiveInvestment),
+    });
+
     produce.remainingUnit -= eventData.metadata.units;
     await produce.save();
+
+    await User.findByIdAndUpdate(payment.user, {
+      $set: { "active-investment": true },
+    });
 
     // Send notification email
     //     await sendDonationAcknowledgement(donation)

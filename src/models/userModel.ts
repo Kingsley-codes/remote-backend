@@ -48,6 +48,11 @@ const userSchema = new Schema(
       type: String,
       minlength: 8,
     },
+    hasActiveInvestment: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
     profilePhoto: {
       publicId: { type: String },
       url: { type: String },

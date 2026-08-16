@@ -22,6 +22,20 @@ import { generateUSerID } from "./authControllers.js";
 import { awardReferralCommission } from "../services/referralService.js";
 import Transaction from "../models/transactionModel.js";
 
+const syncUserActiveInvestmentStatus = async (userId: string) => {
+  const hasActiveInvestment = await Investment.exists({
+    user: userId,
+    orderStatus: "confirmed",
+    status: "ongoing",
+  });
+
+  await User.findByIdAndUpdate(userId, {
+    hasActiveInvestment: Boolean(hasActiveInvestment),
+  });
+
+  return Boolean(hasActiveInvestment);
+};
+
 const handleWalletPayment = async (
   userId: string,
   amount: number,
@@ -78,6 +92,7 @@ const handleWalletPayment = async (
       ROI: ROI,
     });
     await newInvestment.save({ session });
+    await syncUserActiveInvestmentStatus(userId);
     await awardReferralCommission(
       userId,
       newInvestment._id.toString(),
@@ -394,6 +409,7 @@ export const verifyPayment = async (
         duration: produce.duration,
         ROI: produce.ROI,
       });
+      await syncUserActiveInvestmentStatus(payment.user.toString());
       await awardReferralCommission(
         payment.user.toString(),
         newInvestment._id.toString(),
