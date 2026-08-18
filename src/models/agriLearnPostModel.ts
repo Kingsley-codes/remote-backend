@@ -9,10 +9,12 @@ const mediaSchema = new Schema({
 const postSchema = new Schema({
   title: { type: String, required: true, trim: true, maxlength: 180 },
   slug: { type: String, required: true, unique: true, index: true },
+  postType: { type: String, enum: ["blog", "podcast"], default: "blog", index: true },
   excerpt: { type: String, required: true, trim: true, maxlength: 320 },
-  content: { type: String, required: true, trim: true, maxlength: 50000 },
+  content: { type: String, trim: true, maxlength: 50000 },
+  videoUrl: { type: String, trim: true },
   category: { type: String, required: true, trim: true, default: "Agriculture" },
-  heroImage: { type: mediaSchema, required: true },
+  heroImage: { type: mediaSchema, default: undefined },
   bodyMedia: { type: mediaSchema, default: undefined },
   // Retained temporarily so existing articles can be read during migration.
   media: { type: [mediaSchema], default: undefined },
@@ -22,4 +24,5 @@ const postSchema = new Schema({
 
 postSchema.index({ status: 1, publishedAt: -1 });
 postSchema.index({ status: 1, category: 1, publishedAt: -1 });
+postSchema.index({ status: 1, postType: 1, publishedAt: -1 });
 export default model("AgriLearnPost", postSchema);
