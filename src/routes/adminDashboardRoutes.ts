@@ -8,6 +8,8 @@ import {
   getAllWithdrawals,
   getAllPayments,
   getAllFarmers,
+  markPhysicalProduceDelivered,
+  approveCashHarvestReturn,
   createFarmer,
   updateFarmer,
   deleteFarmer,
@@ -33,6 +35,16 @@ adminDashboardRouter.get(
   getInvestmentStats,
 );
 adminDashboardRouter.get("/investments", adminAuthenticate, getInvestments);
+adminDashboardRouter.patch(
+  "/investments/:investmentId/mark-delivered",
+  adminAuthenticate,
+  markPhysicalProduceDelivered,
+);
+adminDashboardRouter.patch(
+  "/investments/:investmentId/approve-cash-return",
+  adminAuthenticate,
+  approveCashHarvestReturn,
+);
 adminDashboardRouter.get("/payments", adminAuthenticate, getAllPayments);
 adminDashboardRouter.get("/withdrawals", adminAuthenticate, getAllWithdrawals);
 

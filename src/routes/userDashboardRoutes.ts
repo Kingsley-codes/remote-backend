@@ -8,6 +8,7 @@ import {
   getUserTransactionById,
   getUserDashboardOverview,
   withdrawBalance,
+  chooseHarvestReturn,
 } from "../controllers/userDashboardController.js";
 
 const userDashboardRouter = express.Router();
@@ -31,5 +32,10 @@ userDashboardRouter.get(
 userDashboardRouter.post("/add-account", userAuthenticate, addBankAccount);
 userDashboardRouter.get("/get-banks", userAuthenticate, getBanks);
 userDashboardRouter.post("/withdraw", userAuthenticate, withdrawBalance);
+userDashboardRouter.patch(
+  "/investments/:investmentId/harvest-choice",
+  userAuthenticate,
+  chooseHarvestReturn,
+);
 
 export default userDashboardRouter;

@@ -68,12 +68,14 @@ const handleWalletPayment = async (
 
     const newPayment = new Transaction({
       user: userId,
+      transactionType: "investment-payment",
+      transactionID: paymentID,
       paymentID: paymentID,
       produce: produceId,
       userEmail: email,
       amount: amount,
       paymentMethod: "wallet",
-      paymentStatus: "Completed",
+      status: "completed",
     });
 
     await newPayment.save({ session });
@@ -89,7 +91,7 @@ const handleWalletPayment = async (
       orderStatus: "confirmed",
       customerEmail: email,
       duration: duration,
-      ROI: ROI,
+      ROI,
     });
     await newInvestment.save({ session });
     await syncUserActiveInvestmentStatus(userId);
@@ -275,6 +277,8 @@ export const initializePayment = async (req: Request, res: Response) => {
 
       const payment = await Transaction.create({
         user: finalUserId,
+        transactionType: "investment-payment",
+        transactionID: paymentID,
         paymentID: paymentID,
         userEmail: email,
         produce: produceId,

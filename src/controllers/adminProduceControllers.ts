@@ -31,10 +31,10 @@ export const createProduce = async (
       totalUnit,
       duration,
       minimumUnit,
-      ROI,
       description,
       price,
       category,
+      ROI,
     } = req.body;
 
     if (
@@ -430,7 +430,6 @@ export const updateProduceStage = async (req: Request, res: Response) => {
       "planting",
       "growing",
       "harvesting",
-      "returns-to-investment",
     ];
 
     if (!validStages.includes(stage)) {

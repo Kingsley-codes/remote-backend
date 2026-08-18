@@ -10,7 +10,7 @@ const transactionSchema = new Schema(
     },
     transactionType: {
       type: String,
-      enum: ["investment-payment", "withdrawal", "referral-reward"],
+      enum: ["investment-payment", "withdrawal", "referral-reward", "harvest-return"],
       required: true,
       index: true,
     },

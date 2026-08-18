@@ -34,11 +34,6 @@ export const getUserDashboardOverview = async (req: Request, res: Response) => {
       (total, investment) => total + investment.totalPrice,
       0,
     );
-    const totalProjectedROI = activeInvestments.reduce(
-      (total, investment) =>
-        total + (investment.totalPrice * Number(investment.ROI || 0)) / 100,
-      0,
-    );
 
     return res.json({
       success: true,
@@ -47,7 +42,6 @@ export const getUserDashboardOverview = async (req: Request, res: Response) => {
         userInvestments,
         totalInvestedAmount,
         totalActiveInvestments: activeInvestments.length,
-        totalProjectedROI,
       },
     });
   } catch (error: any) {
@@ -143,6 +137,21 @@ export const getUserTransactionHistory = async (
               createdAt: transaction.createdAt,
             };
 
+          case "harvest-return":
+            return {
+              id: transaction._id.toString(),
+              type: "harvest-return" as const,
+              reference: transaction.transactionRef,
+              transactionID: transaction.transactionID,
+              title: "Harvest cash return",
+              subtitle: produce?.produceName || produce?.title || "Farm return",
+              amount: transaction.amount,
+              currency: transaction.currency,
+              direction: "credit" as const,
+              status: transaction.status,
+              createdAt: transaction.createdAt,
+            };
+
           default:
             return null;
         }
@@ -221,21 +230,12 @@ export const getUserInvestments = async (req: Request, res: Response) => {
       (investment) => investment.status === "ongoing",
     ).length;
 
-    const totalProjectedROI = userInvestments.reduce((total, investment) => {
-      if (investment.status === "ongoing") {
-        const roi = (investment.totalPrice * 0.1) / investment.duration;
-        return total + roi;
-      }
-      return total;
-    }, 0);
-
     return res.status(200).json({
       success: true,
       data: {
         userInvestments,
         totalInvestedAmount,
         totalActiveInvestments,
-        totalProjectedROI,
       },
     });
   } catch (error: any) {
@@ -243,6 +243,69 @@ export const getUserInvestments = async (req: Request, res: Response) => {
     return res.status(500).json({
       success: false,
       message: "Internal server error",
+    });
+  }
+};
+
+export const chooseHarvestReturn = async (req: Request, res: Response) => {
+  try {
+    const userId = req.user;
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized",
+      });
+    }
+
+    const { investmentId } = req.params;
+    const { choice } = req.body;
+    const validChoices = ["physical-produce", "cash-return"];
+
+    if (!validChoices.includes(choice)) {
+      return res.status(400).json({
+        success: false,
+        message: "Choose either physical produce or cash return",
+      });
+    }
+
+    const fulfillmentStatus =
+      choice === "physical-produce" ? "pending-delivery" : "pending-approval";
+
+    const investment = await Investment.findOneAndUpdate(
+      {
+        _id: investmentId,
+        user: userId,
+        orderStatus: "confirmed",
+        status: "ongoing",
+        stage: "harvesting",
+        harvestChoice: null,
+      },
+      {
+        harvestChoice: choice,
+        harvestFulfillmentStatus: fulfillmentStatus,
+        harvestChoiceDate: new Date(),
+      },
+      { new: true },
+    ).populate("produce", "name title stage image1 image2 image3");
+
+    if (!investment) {
+      return res.status(409).json({
+        success: false,
+        message:
+          "Harvest choice is only available once, for confirmed farms at harvesting stage",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Harvest return choice saved",
+      data: { investment },
+    });
+  } catch (error: any) {
+    console.error("Harvest choice error:", error);
+    return res.status(500).json({
+      success: false,
+      message: error.message ?? "Unable to save harvest choice",
     });
   }
 };
@@ -400,6 +463,8 @@ export const withdrawBalance = async (req: Request, res: Response) => {
       // 4. Create withdrawal (PENDING)
       const withdrawal = new Transaction({
         user: userId,
+        transactionType: "withdrawal",
+        transactionID: withdrawalReference,
         amount,
         status: "pending",
         transactionRef: withdrawalReference,

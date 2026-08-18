@@ -35,7 +35,6 @@ const produceSchema = new Schema(
         "planting",
         "growing",
         "harvesting",
-        "returns-to-investment",
       ],
       default: "accepting-investments",
     },

@@ -55,9 +55,36 @@ const investmentSchema = new Schema(
         "planting",
         "growing",
         "harvesting",
-        "returns-to-investment",
       ],
       default: "accepting-investments",
+    },
+    harvestChoice: {
+      type: String,
+      enum: ["physical-produce", "cash-return"],
+      default: null,
+    },
+    harvestFulfillmentStatus: {
+      type: String,
+      enum: [
+        "pending-selection",
+        "pending-delivery",
+        "delivered",
+        "pending-approval",
+        "approved",
+      ],
+      default: "pending-selection",
+    },
+    harvestChoiceDate: {
+      type: Date,
+    },
+    harvestDeliveredAt: {
+      type: Date,
+    },
+    cashReturnApprovedAt: {
+      type: Date,
+    },
+    cashReturnAmount: {
+      type: Number,
     },
     orderDate: {
       type: Date,
@@ -72,7 +99,7 @@ const investmentSchema = new Schema(
       required: true,
     },
     ROI: {
-      type: String,
+      type: Number,
       required: true,
     },
   },

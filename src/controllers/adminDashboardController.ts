@@ -9,6 +9,9 @@ import {
   uploadToCloudinary,
 } from "../middleware/uploadMiddleware.js";
 import Transaction from "../models/transactionModel.js";
+import Wallet from "../models/walletModel.js";
+import mongoose from "mongoose";
+import { generateReference } from "../helpers/paymentHelper.js";
 
 type UserQuery = {
   status?: "active" | "suspended" | "pending";
@@ -16,6 +19,12 @@ type UserQuery = {
   page?: string;
   q?: string;
 };
+
+const generateHarvestTransactionID = () =>
+  "HAR-" + Math.random().toString(36).substring(2, 10).toUpperCase();
+
+const calculateCashReturn = (totalPrice: number, roi: string | number) =>
+  Math.round(totalPrice * (1 + Number(roi || 0) / 100));
 
 export const getDashboardOverview = async (req: Request, res: Response) => {
   try {
@@ -532,6 +541,154 @@ export const getInvestments = async (req: Request, res: Response) => {
       success: false,
       message: "Server error",
     });
+  }
+};
+
+export const markPhysicalProduceDelivered = async (
+  req: Request,
+  res: Response,
+) => {
+  try {
+    const admin = req.admin;
+    if (!admin) {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized access. Admin credentials required.",
+      });
+    }
+
+    const investment = await Investment.findOneAndUpdate(
+      {
+        _id: req.params.investmentId,
+        stage: "harvesting",
+        harvestChoice: "physical-produce",
+        harvestFulfillmentStatus: "pending-delivery",
+      },
+      {
+        harvestFulfillmentStatus: "delivered",
+        harvestDeliveredAt: new Date(),
+        status: "completed",
+      },
+      { new: true },
+    );
+
+    if (!investment) {
+      return res.status(409).json({
+        success: false,
+        message: "This farm is not waiting for physical produce delivery",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Physical produce marked as delivered",
+      data: { investment },
+    });
+  } catch (error: any) {
+    console.error("Delivery update error:", error);
+    return res.status(500).json({
+      success: false,
+      message: error.message ?? "Unable to mark delivery",
+    });
+  }
+};
+
+export const approveCashHarvestReturn = async (req: Request, res: Response) => {
+  const session = await mongoose.startSession();
+
+  try {
+    const admin = req.admin;
+    if (!admin) {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized access. Admin credentials required.",
+      });
+    }
+
+    const now = new Date();
+    const transactionRef = generateReference("harvest");
+    let updatedInvestment: any = null;
+
+    await session.withTransaction(async () => {
+      const investment = await Investment.findOne({
+        _id: req.params.investmentId,
+        stage: "harvesting",
+        harvestChoice: "cash-return",
+        harvestFulfillmentStatus: "pending-approval",
+      }).session(session);
+
+      if (!investment) {
+        throw new Error("This farm is not waiting for cash return approval");
+      }
+
+      const cashReturnAmount = calculateCashReturn(
+        investment.totalPrice,
+        investment.ROI,
+      );
+
+      updatedInvestment = await Investment.findOneAndUpdate(
+        {
+          _id: investment._id,
+          harvestFulfillmentStatus: "pending-approval",
+          cashReturnApprovedAt: { $exists: false },
+        },
+        {
+          harvestFulfillmentStatus: "approved",
+          cashReturnApprovedAt: now,
+          cashReturnAmount,
+          status: "completed",
+        },
+        { new: true, session },
+      );
+
+      if (!updatedInvestment) {
+        throw new Error("Cash return has already been approved");
+      }
+
+      await Wallet.findOneAndUpdate(
+        { user: investment.user },
+        {
+          $inc: { balance: cashReturnAmount },
+          $setOnInsert: {
+            user: investment.user,
+            currency: "NGN",
+            walletId: `WAL-${String(investment.user).slice(-8).toUpperCase()}`,
+          },
+        },
+        { upsert: true, new: true, session },
+      );
+
+      await Transaction.create(
+        [
+          {
+            user: investment.user,
+            transactionType: "harvest-return",
+            produce: investment.produce,
+            transactionID: generateHarvestTransactionID(),
+            transactionRef,
+            amount: cashReturnAmount,
+            currency: "NGN",
+            status: "completed",
+            date: now,
+          },
+        ],
+        { session },
+      );
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Cash return approved and credited to wallet",
+      data: { investment: updatedInvestment },
+    });
+  } catch (error: any) {
+    console.error("Cash harvest approval error:", error);
+    return res.status(400).json({
+      success: false,
+      message: error.message ?? "Unable to approve cash return",
+    });
+  } finally {
+    session.endSession();
   }
 };
 
