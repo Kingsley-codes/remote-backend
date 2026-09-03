@@ -21,6 +21,7 @@ import mongoose from "mongoose";
 import { generateUSerID } from "./authControllers.js";
 import { awardReferralCommission } from "../services/referralService.js";
 import Transaction from "../models/transactionModel.js";
+import { sendInvestmentPaymentEmail } from "../services/emailService.js";
 
 const syncUserActiveInvestmentStatus = async (userId: string) => {
   const hasActiveInvestment = await Investment.exists({
@@ -202,6 +203,12 @@ export const initializePayment = async (req: Request, res: Response) => {
           units,
           produce.duration,
           produce.ROI,
+        );
+        void sendInvestmentPaymentEmail(
+          email,
+          firstName || "Investor",
+          produce.title,
+          Number(amount),
         );
 
         return res.status(200).json({
@@ -421,6 +428,18 @@ export const verifyPayment = async (
 
       produce.remainingUnit -= transactionData.metadata.units;
       await produce.save();
+
+      const investor = await User.findById(payment.user)
+        .select("firstName email")
+        .lean();
+      if (investor?.email) {
+        void sendInvestmentPaymentEmail(
+          investor.email,
+          investor.firstName,
+          produce.title,
+          payment.amount,
+        );
+      }
 
       return res.status(200).json({
         success: true,

@@ -6,6 +6,10 @@ import User from "../models/userModel.js";
 import Wallet from "../models/walletModel.js";
 import { awardReferralCommission } from "../services/referralService.js";
 import Transaction from "../models/transactionModel.js";
+import {
+  sendInvestmentPaymentEmail,
+  sendWithdrawalCompletedEmail,
+} from "../services/emailService.js";
 
 // Helper function to generate unique IDs
 export const generatePaymentID = () =>
@@ -34,6 +38,8 @@ export const handleChargeSuccess = async (eventData: PaystackEventData) => {
       );
       throw new Error("Payent not found");
     }
+
+    if (payment.status === "completed") return payment;
 
     payment.date = new Date(eventData.paid_at);
     payment.status = "completed";
@@ -81,8 +87,17 @@ export const handleChargeSuccess = async (eventData: PaystackEventData) => {
       $set: { "active-investment": true },
     });
 
-    // Send notification email
-    //     await sendDonationAcknowledgement(donation)
+    const investor = await User.findById(payment.user)
+      .select("firstName email")
+      .lean();
+    if (investor?.email) {
+      void sendInvestmentPaymentEmail(
+        investor.email,
+        investor.firstName,
+        produce.title,
+        payment.amount,
+      );
+    }
   } catch (error: any) {
     console.error("Error updating successful payment:", error.message);
   }
@@ -119,6 +134,13 @@ export const handleTransferSuccess = async (data: any) => {
     { user: withdrawal.user },
     { $inc: { lockedBalance: -withdrawal.amount } },
   );
+
+  const user = await User.findById(withdrawal.user)
+    .select("firstName email")
+    .lean();
+  if (user?.email) {
+    void sendWithdrawalCompletedEmail(user.email, user.firstName, withdrawal.amount);
+  }
 };
 
 export const handleTransferFailed = async (data: any) => {

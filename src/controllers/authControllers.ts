@@ -10,6 +10,8 @@ import {
 import passport from "passport";
 import { UserJwtPayload } from "../config/passport.js"; // import the interface
 import Referral from "../models/referralModel.js";
+import { consumeEmailOtp, issueEmailOtp } from "../services/otpService.js";
+import { sendOtpEmail } from "../services/emailService.js";
 
 // Helper function to sign JWT tokens for User
 const signToken = (id: string): string => {
@@ -83,45 +85,35 @@ export const registerUser = async (
       });
     }
 
-    // Hash password
-    const hashedPassword = await bcrypt.hash(password, 12);
-
-    // Check if user already exists
-    const existingUser = await User.findOne({ email });
-    if (existingUser && existingUser.isVerified) {
+    const normalizedEmail = email.trim().toLowerCase();
+    const existingUser = await User.findOne({ email: normalizedEmail });
+    if (existingUser) {
       return res.status(400).json({
         status: "fail",
-        message: "User is already registered and verified",
+        message: "An account already exists with this email",
       });
-    } else {
-      // Create new user
-      const referrer = referralCode
-        ? await User.findOne({ farmerID: referralCode.trim().toUpperCase() })
-        : null;
-      if (referralCode && !referrer)
-        return res
-          .status(400)
-          .json({ status: "fail", message: "Invalid referral code" });
-      const newUser = await User.create({
-        email,
-        password: hashedPassword,
-        firstName,
-        lastName,
-        farmerID: generateUSerID(),
-        referredBy: referrer?._id,
-      });
-      if (referrer)
-        await Referral.create({
-          referrer: referrer._id,
-          referredUser: newUser._id,
-          referralCode: referrer.farmerID,
-        });
     }
 
-    // Respond with success
-    return res.status(201).json({
+    if (referralCode && !(await User.exists({ farmerID: referralCode.trim().toUpperCase() }))) {
+      return res.status(400).json({ status: "fail", message: "Invalid referral code" });
+    }
+
+    const code = await issueEmailOtp({
+      email: normalizedEmail,
+      purpose: "signup",
+      payload: {
+        firstName,
+        lastName,
+        password: await bcrypt.hash(password, 12),
+        referralCode: referralCode?.trim().toUpperCase() || undefined,
+      },
+    });
+    await sendOtpEmail(normalizedEmail, code, "signup");
+
+    return res.status(202).json({
       status: "success",
-      message: "User registered successfully",
+      message: "A verification code has been sent to your email",
+      requiresVerification: true,
     });
   } catch (err: any) {
     console.error("Error registering user:", err);
@@ -130,6 +122,58 @@ export const registerUser = async (
       message: "Registration failed",
       error: err.message,
     });
+  }
+};
+
+export const verifySignupOtp = async (req: Request, res: Response) => {
+  try {
+    const { email, otp } = req.body as { email?: string; otp?: string };
+    if (!email || !otp) return res.status(400).json({ status: "fail", message: "Email and verification code are required" });
+    const payload = await consumeEmailOtp({ email, purpose: "signup", code: otp });
+    if (!payload) return res.status(400).json({ status: "fail", message: "Invalid or expired verification code" });
+    const { firstName, lastName, password, referralCode } = payload as { firstName: string; lastName: string; password: string; referralCode?: string };
+    if (await User.exists({ email: email.trim().toLowerCase() })) return res.status(409).json({ status: "fail", message: "An account already exists with this email" });
+    const referrer = referralCode ? await User.findOne({ farmerID: referralCode }) : null;
+    const newUser = await User.create({ email: email.trim().toLowerCase(), password, firstName, lastName, farmerID: generateUSerID(), referredBy: referrer?._id, isVerified: true });
+    if (referrer) await Referral.create({ referrer: referrer._id, referredUser: newUser._id, referralCode: referrer.farmerID });
+    return res.status(201).json({ status: "success", message: "Email verified and account created" });
+  } catch (err: any) {
+    console.error("Signup verification error:", err);
+    return res.status(500).json({ status: "error", message: "Unable to verify email" });
+  }
+};
+
+export const requestPasswordReset = async (req: Request, res: Response) => {
+  try {
+    const email = String(req.body.email ?? "").trim().toLowerCase();
+    if (!validator.isEmail(email)) return res.status(400).json({ status: "fail", message: "A valid email is required" });
+    const user = await User.findOne({ email });
+    if (user) {
+      const code = await issueEmailOtp({ email, userId: user._id.toString(), purpose: "password-reset" });
+      await sendOtpEmail(email, code, "password-reset");
+    }
+    return res.status(200).json({ status: "success", message: "If an account exists, a reset code has been sent" });
+  } catch (err) {
+    console.error("Password reset request error:", err);
+    return res.status(503).json({ status: "error", message: "Unable to send reset code" });
+  }
+};
+
+export const resetPassword = async (req: Request, res: Response) => {
+  try {
+    const { email, otp, password, confirmPassword } = req.body as { email?: string; otp?: string; password?: string; confirmPassword?: string };
+    if (!email || !otp || !password || !confirmPassword) return res.status(400).json({ status: "fail", message: "Email, code, and password fields are required" });
+    if (password !== confirmPassword || !validator.isStrongPassword(password, { minLength: 8, minUppercase: 1, minSymbols: 1, minNumbers: 1 })) return res.status(400).json({ status: "fail", message: "Use a strong matching password" });
+    const user = await User.findOne({ email: email.trim().toLowerCase() });
+    if (!user) return res.status(400).json({ status: "fail", message: "Invalid or expired reset code" });
+    const valid = await consumeEmailOtp({ email, userId: user._id.toString(), purpose: "password-reset", code: otp });
+    if (!valid) return res.status(400).json({ status: "fail", message: "Invalid or expired reset code" });
+    user.password = await bcrypt.hash(password, 12);
+    await user.save();
+    return res.status(200).json({ status: "success", message: "Password reset successfully" });
+  } catch (err) {
+    console.error("Password reset error:", err);
+    return res.status(500).json({ status: "error", message: "Unable to reset password" });
   }
 };
 

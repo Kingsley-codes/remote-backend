@@ -12,6 +12,7 @@ import Transaction from "../models/transactionModel.js";
 import Wallet from "../models/walletModel.js";
 import mongoose from "mongoose";
 import { generateReference } from "../helpers/paymentHelper.js";
+import { sendAccountStatusEmail } from "../services/emailService.js";
 
 type UserQuery = {
   status?: "active" | "suspended" | "pending";
@@ -298,6 +299,7 @@ export const suspendUser = async (
 
     user.status = "suspended";
     await user.save();
+    void sendAccountStatusEmail(user.email, user.firstName, "suspended");
     return res.status(200).json({
       success: true,
       message: "User suspended successfully",
@@ -339,6 +341,7 @@ export const activateUser = async (
     }
     user.status = "active";
     await user.save();
+    void sendAccountStatusEmail(user.email, user.firstName, "active");
     return res.status(200).json({
       success: true,
       message: "User activated successfully",

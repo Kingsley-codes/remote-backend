@@ -7,6 +7,7 @@ import {
 import { ProduceRequestBody } from "../interface/allInterfaces.js";
 import Investment from "../models/investmentModel.js";
 import { createProduceNotification } from "./notificationController.js";
+import { sendProduceStageEmail } from "../services/emailService.js";
 
 export const generateProduceID = () =>
   "RAP-" + Math.random().toString(36).substring(2, 10).toUpperCase();
@@ -468,6 +469,33 @@ export const updateProduceStage = async (req: Request, res: Response) => {
       type: "stage-change",
       adminId: req.admin,
     });
+    const investments = await Investment.find({
+      produce: produceID,
+      status: "ongoing",
+      orderStatus: "confirmed",
+    })
+      .populate("user", "firstName email")
+      .select("user")
+      .lean();
+    const recipients = new Map<string, { firstName: string; email: string }>();
+    for (const investment of investments) {
+      const user = investment.user as unknown as {
+        _id?: { toString(): string };
+        firstName?: string;
+        email?: string;
+      } | null;
+      if (user?._id && user.email) {
+        recipients.set(user._id.toString(), {
+          firstName: user.firstName || "Investor",
+          email: user.email,
+        });
+      }
+    }
+    await Promise.all(
+      [...recipients.values()].map((user) =>
+        sendProduceStageEmail(user.email, user.firstName, updatedProduce.title, stageLabel),
+      ),
+    );
 
     return res.status(200).json({
       success: true,

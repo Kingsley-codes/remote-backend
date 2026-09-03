@@ -12,6 +12,7 @@ import {
   updateBankAccount,
   withdrawBalance,
   chooseHarvestReturn,
+  requestBankAccountOtp,
 } from "../controllers/userDashboardController.js";
 
 const userDashboardRouter = express.Router();
@@ -32,6 +33,7 @@ userDashboardRouter.get(
   userAuthenticate,
   getUserTransactionById,
 );
+userDashboardRouter.post("/add-account/request-otp", userAuthenticate, requestBankAccountOtp);
 userDashboardRouter.post("/add-account", userAuthenticate, addBankAccount);
 userDashboardRouter.get("/bank-account", userAuthenticate, getBankAccount);
 userDashboardRouter.put("/bank-account", userAuthenticate, updateBankAccount);
