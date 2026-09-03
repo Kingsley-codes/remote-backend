@@ -37,6 +37,20 @@ export const markNotificationRead = async (req: Request, res: Response) => {
   return res.json({ success: true });
 };
 
+export const clearNotifications = async (req: Request, res: Response) => {
+  await Notification.updateMany(
+    { recipients: req.user },
+    { $pull: { recipients: req.user, readBy: req.user } },
+  );
+  await Notification.deleteMany({ recipients: { $size: 0 } });
+  return res.json({ success: true });
+};
+
+export async function deleteExpiredNotifications() {
+  const expiresBefore = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000);
+  await Notification.deleteMany({ createdAt: { $lt: expiresBefore } });
+}
+
 export const adminCreateNotification = async (req: Request, res: Response) => {
   const produceId = String(req.body.produceId ?? "");
   const title = String(req.body.title ?? "").trim();

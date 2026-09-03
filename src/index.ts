@@ -3,6 +3,7 @@ import app, { allowedOrigins } from "./app.js";
 import mongoose from "mongoose";
 import type { Request, Response } from "express";
 import { closeExpiredResolvedTickets } from "./controllers/ticketController.js";
+import { deleteExpiredNotifications } from "./controllers/notificationController.js";
 import { createServer } from "node:http";
 import { initializeRealtime } from "./realtime.js";
 
@@ -20,7 +21,9 @@ try {
   await mongoose.connect(MONGO_URI);
   console.log("MongoDB Connected Successfully");
   await closeExpiredResolvedTickets();
+  await deleteExpiredNotifications();
   setInterval(() => void closeExpiredResolvedTickets(), 60 * 60 * 1000).unref();
+  setInterval(() => void deleteExpiredNotifications(), 60 * 60 * 60 * 1000).unref();
 } catch (error) {
   console.error("MongoDB Connection Error:", error);
   process.exit(1);
