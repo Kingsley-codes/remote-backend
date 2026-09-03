@@ -27,6 +27,8 @@ const bankAccountSchema = new Schema(
   { timestamps: true },
 );
 
+bankAccountSchema.index({ user: 1 }, { unique: true });
+
 export type BankAccount = InferSchemaType<typeof bankAccountSchema>;
 export type BankAccountDocument = HydratedDocument<BankAccount>;
 

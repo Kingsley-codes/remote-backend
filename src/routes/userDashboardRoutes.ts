@@ -2,11 +2,14 @@ import express from "express";
 import { userAuthenticate } from "../middleware/authenticationMiddleware.js";
 import {
   addBankAccount,
+  getBankAccount,
   getBanks,
   getUserInvestments,
   getUserTransactionHistory,
   getUserTransactionById,
   getUserDashboardOverview,
+  removeBankAccount,
+  updateBankAccount,
   withdrawBalance,
   chooseHarvestReturn,
 } from "../controllers/userDashboardController.js";
@@ -30,6 +33,9 @@ userDashboardRouter.get(
   getUserTransactionById,
 );
 userDashboardRouter.post("/add-account", userAuthenticate, addBankAccount);
+userDashboardRouter.get("/bank-account", userAuthenticate, getBankAccount);
+userDashboardRouter.put("/bank-account", userAuthenticate, updateBankAccount);
+userDashboardRouter.delete("/bank-account", userAuthenticate, removeBankAccount);
 userDashboardRouter.get("/get-banks", userAuthenticate, getBanks);
 userDashboardRouter.post("/withdraw", userAuthenticate, withdrawBalance);
 userDashboardRouter.patch(

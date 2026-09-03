@@ -323,6 +323,10 @@ export const addBankAccount = async (req: Request, res: Response) => {
 
     const { accountName, accountNumber, bankCode, password } = req.body;
 
+    if (await BankAccount.exists({ user: userId })) {
+      return res.status(409).json({ success: false, message: "A withdrawal account is already linked. Update or remove it first." });
+    }
+
     const user = await User.findById(userId).select("+password");
     if (!user || !user.password) {
       return res.status(404).json({
@@ -366,6 +370,36 @@ export const addBankAccount = async (req: Request, res: Response) => {
       message: err.response?.data || "Failed to add bank",
     });
   }
+};
+
+export const getBankAccount = async (req: Request, res: Response) => {
+  const bank = await BankAccount.findOne({ user: req.user }).select("accountName accountNumber bankCode createdAt").lean();
+  return res.json({ success: true, data: bank });
+};
+
+export const updateBankAccount = async (req: Request, res: Response) => {
+  try {
+    const userId = req.user;
+    const { accountName, accountNumber, bankCode, password } = req.body;
+    const user = await User.findById(userId).select("+password");
+    if (!user?.password || !await bcrypt.compare(password ?? "", user.password)) return res.status(401).json({ success: false, message: "Invalid credentials" });
+    const existing = await BankAccount.findOne({ user: userId });
+    if (!existing) return res.status(404).json({ success: false, message: "No withdrawal account found" });
+    const recipient = await createRecipient({ name: accountName, account_number: accountNumber, bank_code: bankCode });
+    existing.set({ accountName, accountNumber, bankCode, recipientCode: recipient.recipient_code });
+    await existing.save();
+    return res.json({ success: true, data: existing });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, message: err.response?.data ?? "Failed to update bank account" });
+  }
+};
+
+export const removeBankAccount = async (req: Request, res: Response) => {
+  const user = await User.findById(req.user).select("+password");
+  if (!user?.password || !await bcrypt.compare(req.body.password ?? "", user.password)) return res.status(401).json({ success: false, message: "Invalid credentials" });
+  const deleted = await BankAccount.findOneAndDelete({ user: req.user });
+  if (!deleted) return res.status(404).json({ success: false, message: "No withdrawal account found" });
+  return res.json({ success: true });
 };
 
 export const getBanks = async (req: Request, res: Response) => {
