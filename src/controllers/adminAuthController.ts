@@ -15,7 +15,7 @@ const signToken = (id: string): string => {
   if (!secret) throw new Error("JWT_SECRET is not defined");
   if (!expiresIn) throw new Error("JWT_EXPIRES_IN is not defined");
 
-  return jwt.sign({ id }, secret, {
+  return jwt.sign({ id, type: "admin" }, secret, {
     expiresIn: expiresIn as NonNullable<SignOptions["expiresIn"]>,
   });
 };
@@ -65,7 +65,7 @@ export const adminLogin = async (
     const token = signToken(admin._id.toString());
     admin.password = null;
 
-    const isSecure = req.secure || req.headers["x-forwarded-proto"] === "https";
+    const isSecure = process.env.NODE_ENV === "production";
 
     res.cookie("admin_token", token, {
       httpOnly: true,
@@ -84,8 +84,6 @@ export const adminLogin = async (
     return res.status(500).json({
       status: "error",
       message: "Login failed due to server error",
-      details: err.message,
-      stack: process.env.NODE_ENV === "development" ? err.stack : undefined,
     });
   }
 };
@@ -118,8 +116,7 @@ export const googleAuthCallback = (
 
       const token = signToken(user.id);
 
-      const isSecure =
-        req.secure || req.headers["x-forwarded-proto"] === "https";
+      const isSecure = process.env.NODE_ENV === "production";
 
       res.cookie("admin_token", token, {
         httpOnly: true,
@@ -134,13 +131,11 @@ export const googleAuthCallback = (
 };
 
 export const adminLogout = (req: Request, res: Response) => {
-  const isSecure = req.secure || req.headers["x-forwarded-proto"] === "https";
-
-  res.cookie("admin_token", {
+  const isSecure = process.env.NODE_ENV === "production";
+  res.clearCookie("admin_token", {
     httpOnly: true,
     secure: isSecure,
     sameSite: isSecure ? "none" : "lax",
-    maxAge: 7 * 24 * 60 * 60 * 1000,
   });
 
   res.status(200).json({

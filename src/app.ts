@@ -32,6 +32,14 @@ const limiter = rateLimit({
   message: "Too many requests from this IP, please try again later",
 });
 
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { status: "fail", message: "Too many authentication attempts. Please try again later." },
+});
+
 export const allowedOrigins = [
   process.env.FRONTEND_URL,
   process.env.FRONTEND_LOCALHOST,
@@ -50,7 +58,12 @@ app.use(
 app.set("trust proxy", 1);
 
 app.use("/api", passport.initialize());
-app.use("/api", express.json());
+app.use("/api", express.json({ limit: "1mb", verify: (req, _res, buffer) => {
+  const request = req as express.Request;
+  if (request.originalUrl === "/api/payment/paystack/webhook") {
+    (req as express.Request & { rawBody?: Buffer }).rawBody = Buffer.from(buffer);
+  }
+} }));
 app.use("/api", compression());
 app.use("/api", cookieParser());
 app.use("/api", express.urlencoded({ extended: true }));
@@ -68,6 +81,9 @@ app.use((req, res, next) => {
   }
   next();
 });
+
+app.use("/api/auth", authLimiter);
+app.use("/api/admin/auth", authLimiter);
 
 if (process.env.NODE_ENV === "development") {
   app.use("/api/dev", devWithdrawRouter);

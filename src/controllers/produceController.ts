@@ -36,7 +36,6 @@ export const getAllProduce = async (req: Request, res: Response) => {
     return res.status(500).json({
       success: false,
       message: "Server error",
-      error: error.message,
     });
   }
 };
@@ -61,7 +60,6 @@ export const fetchSingleProduce = async (
     console.error("Error fetching single produce item:", error);
     return res.status(500).json({
       message: "Server error",
-      error: error.message,
     });
   }
 };

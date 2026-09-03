@@ -49,7 +49,7 @@ export const getUserDashboardOverview = async (req: Request, res: Response) => {
   } catch (error: any) {
     return res.status(500).json({
       success: false,
-      message: error.message ?? "Unable to load dashboard overview",
+      message: "Unable to load dashboard overview",
     });
   }
 };
@@ -171,7 +171,7 @@ export const getUserTransactionHistory = async (
 
     return res.status(500).json({
       success: false,
-      message: error.message ?? "Unable to load transaction history",
+      message: "Unable to load transaction history",
     });
   }
 };
@@ -203,7 +203,7 @@ export const getUserTransactionById = async (req: Request, res: Response) => {
     console.error("Get transaction error:", error);
     return res.status(500).json({
       success: false,
-      message: error.message ?? "Unable to get transaction",
+      message: "Unable to get transaction",
     });
   }
 };
@@ -305,7 +305,7 @@ export const chooseHarvestReturn = async (req: Request, res: Response) => {
     console.error("Harvest choice error:", error);
     return res.status(500).json({
       success: false,
-      message: error.message ?? "Unable to save harvest choice",
+      message: "Unable to save harvest choice",
     });
   }
 };
@@ -651,7 +651,7 @@ export const withdrawBalance = async (req: Request, res: Response) => {
   } catch (error: any) {
     return res.status(400).json({
       success: false,
-      message: error.message || "Something went wrong",
+      message: "Unable to process withdrawal",
     });
   } finally {
     session.endSession();

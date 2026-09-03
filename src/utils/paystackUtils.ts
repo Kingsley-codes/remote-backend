@@ -43,8 +43,7 @@ export const initializePaystackTransaction = async (
     // Return consistent error format
     return {
       status: false,
-      message: error.response?.data?.message || error.message,
-      error: error.response?.data,
+      message: "Payment provider request failed",
     };
   }
 };
@@ -69,22 +68,6 @@ export const createRecipient = async (data: {
 
   return res.data.data;
 };
-
-// export const initiateTransfer = async (data: {
-//   amount: number;
-//   recipient: string;
-//   reference: string;
-// }) => {
-//   const res = await paystack.post("/transfer", {
-//     source: "balance",
-//     amount: data.amount * 100,
-//     recipient: data.recipient,
-//     reference: data.reference,
-//     reason: "Withdrawal",
-//   });
-
-//   return res.data.data;
-// };
 
 export const realInitiateTransfer = async (data: {
   amount: number;
@@ -124,6 +107,6 @@ const mockInitiateTransfer = async (data: {
 };
 
 export const initiateTransfer =
-  process.env.NODE_ENV === "development" || process.env.MOCK_PAYSTACK === "true"
+  process.env.NODE_ENV === "development"
     ? mockInitiateTransfer
     : realInitiateTransfer;

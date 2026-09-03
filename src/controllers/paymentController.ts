@@ -22,6 +22,7 @@ import { generateUSerID } from "./authControllers.js";
 import { awardReferralCommission } from "../services/referralService.js";
 import Transaction from "../models/transactionModel.js";
 import { sendInvestmentPaymentEmail } from "../services/emailService.js";
+import validator from "validator";
 
 const syncUserActiveInvestmentStatus = async (userId: string) => {
   const hasActiveInvestment = await Investment.exists({
@@ -50,19 +51,15 @@ const handleWalletPayment = async (
   const session = await mongoose.startSession();
 
   try {
+    session.startTransaction();
     const userWallet = await Wallet.findOneAndUpdate(
-      { user: userId },
+      { user: userId, balance: { $gte: Number(amount) } },
       { $inc: { balance: -Number(amount) } },
       { new: true, session },
     );
 
     if (!userWallet) {
       throw new Error("User wallet not found");
-    }
-
-    // Prevent negative balance
-    if (userWallet.balance < 0) {
-      throw new Error("Insufficient wallet balance");
     }
 
     const paymentID = generatePaymentID();
@@ -121,16 +118,16 @@ const handleWalletPayment = async (
 export const initializePayment = async (req: Request, res: Response) => {
   try {
     const {
-      userId,
       lastName,
       firstName,
       address,
       paymentMethod,
-      email,
+      email: requestedEmail,
       produceId,
       amount,
       units,
     } = req.body;
+    let userId = req.user?.toString();
 
     if (!paymentMethod || !amount || !produceId || !units) {
       return res.status(400).json({
@@ -139,40 +136,47 @@ export const initializePayment = async (req: Request, res: Response) => {
           "Missing required fields: units, produceId, paymentMethod, amount",
       });
     }
-
-    if (!userId && (!lastName || !firstName || !email || !address)) {
-      return res.status(400).json({
-        success: false,
-        message: "Missing required fields: lastName, firstName, email, address",
-      });
+    const numericAmount = Number(amount);
+    const numericUnits = Number(units);
+    if (
+      !Number.isFinite(numericAmount) || numericAmount <= 0 ||
+      !Number.isSafeInteger(numericUnits) || numericUnits <= 0
+    ) {
+      return res.status(400).json({ success: false, message: "Invalid payment amount or investment units" });
     }
 
+    let user;
     if (userId) {
-      const user = await User.findById(userId);
-
-      if (!user) {
-        return res.status(404).json({
+      user = await User.findOne({ _id: userId, status: "active" });
+      if (!user) return res.status(401).json({ success: false, message: "Unauthorized" });
+    } else {
+      const email = String(requestedEmail ?? "").trim().toLowerCase();
+      if (!firstName || !lastName || !address || !validator.isEmail(email)) {
+        return res.status(400).json({
           success: false,
-          message: "User account not found",
+          message: "First name, last name, address, and a valid email are required for guest checkout",
         });
       }
+
+      user = await User.findOne({ email });
+      if (!user) {
+        user = await User.create({
+          firstName: String(firstName).trim(),
+          lastName: String(lastName).trim(),
+          email,
+          address: String(address).trim(),
+          farmerID: generateUSerID(),
+        });
+      }
+      if (user.status !== "active") {
+        return res.status(403).json({ success: false, message: "This account is not available for checkout" });
+      }
+      userId = user._id.toString();
     }
 
-    let finalUserId;
-
-    if (!userId) {
-      const newUser = await User.create({
-        firstName,
-        lastName,
-        email,
-        farmerID: generateUSerID(),
-        address,
-      });
-
-      finalUserId = newUser._id;
-    } else {
-      finalUserId = userId;
-    }
+    const finalUserId = user._id;
+    const finalUserIdString = user._id.toString();
+    const { email, firstName: userFirstName, lastName: userLastName } = user;
 
     const produce = await Produce.findById(produceId);
 
@@ -183,9 +187,13 @@ export const initializePayment = async (req: Request, res: Response) => {
       });
     }
 
-    const expectedAmount = produce.price * units;
+    if (numericUnits < produce.minimumUnit || numericUnits > produce.remainingUnit) {
+      return res.status(400).json({ success: false, message: "Requested units are not available" });
+    }
 
-    if (Number(amount) !== expectedAmount) {
+    const expectedAmount = produce.price * numericUnits;
+
+    if (numericAmount !== expectedAmount) {
       return res.status(400).json({
         success: false,
         message: "Amount does not match expected value",
@@ -195,20 +203,20 @@ export const initializePayment = async (req: Request, res: Response) => {
     if (paymentMethod === "wallet") {
       try {
         const { paymentID, newInvestment } = await handleWalletPayment(
-          userId,
-          amount,
+          finalUserIdString,
+          numericAmount,
           email,
           produceId,
           produce.title,
-          units,
+          numericUnits,
           produce.duration,
           produce.ROI,
         );
         void sendInvestmentPaymentEmail(
           email,
-          firstName || "Investor",
+          userFirstName || "Investor",
           produce.title,
-          Number(amount),
+          numericAmount,
         );
 
         return res.status(200).json({
@@ -223,13 +231,13 @@ export const initializePayment = async (req: Request, res: Response) => {
         return res.status(500).json({
           success: false,
           message: "Failed to process wallet payment",
-          error: error.message,
+          error: "Payment could not be completed",
         });
       }
     } else {
-      const userName = firstName + " " + lastName;
+      const userName = `${userFirstName} ${userLastName}`;
 
-      const amountKobo = Math.round(Number(amount) * 100);
+      const amountKobo = Math.round(numericAmount * 100);
 
       const paymentID = generatePaymentID();
 
@@ -242,8 +250,8 @@ export const initializePayment = async (req: Request, res: Response) => {
           user_name: userName,
           user_email: email,
           produce_id: produceId,
-          amount: amount,
-          units: units,
+          amount: numericAmount,
+          units: numericUnits,
           payment_id: paymentID,
           produce_title: produce.title,
           custom_fields: [
@@ -260,7 +268,7 @@ export const initializePayment = async (req: Request, res: Response) => {
             {
               display_name: "Amount",
               variable_name: "amount",
-              value: amount,
+              value: numericAmount,
             },
           ],
         },
@@ -289,7 +297,7 @@ export const initializePayment = async (req: Request, res: Response) => {
         paymentID: paymentID,
         userEmail: email,
         produce: produceId,
-        amount: amount,
+        amount: numericAmount,
         paymentMethod: paymentMethod,
         transactionRef: paystackResponse.data.reference,
       });
@@ -311,7 +319,7 @@ export const initializePayment = async (req: Request, res: Response) => {
 
     return res.status(500).json({
       success: false,
-      message: error.message,
+      message: "Unable to initialize payment",
     });
   }
 };
@@ -344,7 +352,10 @@ export const verifyPayment = async (
     const transactionData = verificationResponse.data;
 
     // Find donation record by transactionRef
-    const payment = await Transaction.findOne({ transactionRef: reference });
+    const payment = await Transaction.findOne({
+      transactionRef: reference,
+      ...(req.user ? { user: req.user } : {}),
+    });
 
     if (!payment) {
       return res.status(404).json({
@@ -464,7 +475,6 @@ export const verifyPayment = async (
     return res.status(500).json({
       success: false,
       message: "Internal server error",
-      error: error.message,
     });
   }
 };
@@ -483,12 +493,18 @@ export const handleWebhook = async (req: Request, res: Response) => {
       return res.status(500).send("Paystack secret key not configured");
     }
 
-    const hash = crypto
+    const rawBody = (req as Request & { rawBody?: Buffer }).rawBody;
+    if (!rawBody) return res.status(400).send("Invalid webhook payload");
+    const expectedSignature = crypto
       .createHmac("sha512", secret)
-      .update(JSON.stringify(req.body))
+      .update(rawBody)
       .digest("hex");
 
-    if (hash !== signature) {
+    if (
+      typeof signature !== "string" ||
+      signature.length !== expectedSignature.length ||
+      !crypto.timingSafeEqual(Buffer.from(expectedSignature), Buffer.from(signature))
+    ) {
       return res.status(400).send("Invalid signature");
     }
 

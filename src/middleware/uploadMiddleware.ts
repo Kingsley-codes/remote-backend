@@ -20,6 +20,18 @@ const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5 MB
 // ALLOWED MIME TYPES
 const allowedMimeTypes = ["image/jpeg", "image/png", "image/jpg", "image/webp"];
 
+const startsWith = (buffer: Buffer, bytes: number[]) =>
+  buffer.length >= bytes.length && bytes.every((byte, index) => buffer[index] === byte);
+
+const isImageBuffer = (buffer: Buffer) =>
+  startsWith(buffer, [0xff, 0xd8, 0xff]) ||
+  startsWith(buffer, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]) ||
+  (buffer.length >= 12 && buffer.subarray(0, 4).toString() === "RIFF" && buffer.subarray(8, 12).toString() === "WEBP");
+
+const isVideoBuffer = (buffer: Buffer) =>
+  (buffer.length >= 8 && buffer.subarray(4, 8).toString() === "ftyp") ||
+  startsWith(buffer, [0x1a, 0x45, 0xdf, 0xa3]);
+
 // COMMON FILE FILTER
 const fileFilter = (
   req: Request,
@@ -41,7 +53,7 @@ const fileFilter = (
 const produceStorage = multer.memoryStorage();
 export const uploadProduceImages = multer({
   storage: produceStorage,
-  limits: { fileSize: MAX_FILE_SIZE },
+  limits: { fileSize: MAX_FILE_SIZE, files: 3, fields: 20, parts: 25 },
   fileFilter,
 }).fields([
   { name: "image1", maxCount: 1 },
@@ -51,19 +63,19 @@ export const uploadProduceImages = multer({
 
 export const uploadProducerImages = multer({
   storage: produceStorage,
-  limits: { fileSize: MAX_FILE_SIZE },
+  limits: { fileSize: MAX_FILE_SIZE, files: 1, fields: 20, parts: 22 },
   fileFilter,
 }).fields([{ name: "profilePhoto", maxCount: 1 }]);
 
 export const uploadFiles = multer({
   storage: produceStorage,
-  limits: { fileSize: MAX_FILE_SIZE },
+  limits: { fileSize: MAX_FILE_SIZE, files: 5, fields: 20, parts: 30 },
   fileFilter,
 }).fields([{ name: "files", maxCount: 5 }]);
 
 export const uploadTicketImages = multer({
   storage: produceStorage,
-  limits: { fileSize: MAX_FILE_SIZE, files: 4 },
+  limits: { fileSize: MAX_FILE_SIZE, files: 4, fields: 20, parts: 30 },
   fileFilter,
 }).fields([{ name: "images", maxCount: 4 }]);
 
@@ -74,7 +86,7 @@ const postMediaFilter = (req: Request, file: Express.Multer.File, cb: FileFilter
 
 export const uploadPostMedia = multer({
   storage: produceStorage,
-  limits: { fileSize: 50 * 1024 * 1024, files: 2 },
+  limits: { fileSize: 50 * 1024 * 1024, files: 2, fields: 20, parts: 25 },
   fileFilter: postMediaFilter,
 }).fields([
   { name: "heroImage", maxCount: 1 },
@@ -83,6 +95,9 @@ export const uploadPostMedia = multer({
 
 export const uploadMediaToCloudinary = (fileBuffer: Buffer, folder: string, resourceType: "image" | "video") =>
   new Promise<CloudinaryUploadResult>((resolve, reject) => {
+    if (resourceType === "image" ? !isImageBuffer(fileBuffer) : !isVideoBuffer(fileBuffer)) {
+      return reject(new Error("Uploaded file content does not match an allowed media type"));
+    }
     const stream = cloudinary.uploader.upload_stream({ folder, resource_type: resourceType }, (error, result) => {
       if (error) return reject(error);
       if (!result) return reject(new Error("Cloudinary upload failed"));
@@ -105,10 +120,10 @@ export const handleUploadErrors = (
         .json({ error: "File too large. Maximum size is 5 MB per file." });
       return;
     }
-    res.status(400).json({ error: `Upload error: ${err.message}` });
+    res.status(400).json({ error: "Invalid upload request" });
     return;
   } else if (err) {
-    res.status(400).json({ error: err.message });
+    res.status(400).json({ error: "Invalid uploaded file" });
     return;
   }
   next();
@@ -120,6 +135,9 @@ export const uploadToCloudinary = (
   folder: string,
 ): Promise<CloudinaryUploadResult> => {
   return new Promise((resolve, reject) => {
+    if (!isImageBuffer(fileBuffer)) {
+      return reject(new Error("Uploaded file content does not match an allowed image type"));
+    }
     const uploadStream = cloudinary.uploader.upload_stream(
       { folder },
       (error, result) => {

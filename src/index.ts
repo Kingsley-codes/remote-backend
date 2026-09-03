@@ -41,9 +41,9 @@ httpServer.listen(PORT, () => {
 });
 
 app.use((err: any, req: any, res: any, next: any) => {
-  console.error(err);
+  console.error("Unhandled request error", { method: req.method, path: req.originalUrl, error: err?.message });
   res.status(500).json({
     status: "error",
-    message: err?.message ?? "Internal Server Error",
+    message: "Internal Server Error",
   });
 });
