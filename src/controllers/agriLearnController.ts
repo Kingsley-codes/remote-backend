@@ -1,6 +1,8 @@
 import { Request, Response } from "express";
 import AgriLearnPost from "../models/agriLearnPostModel.js";
+import AgriLearnComment from "../models/agriLearnCommentModel.js";
 import { uploadMediaToCloudinary } from "../middleware/uploadMiddleware.js";
+import type { AgriLearnPostTagsRequestBody } from "../interface/allInterfaces.js";
 
 const slugify = (value: string) =>
   value
@@ -17,6 +19,21 @@ type PostType = (typeof postTypes)[number];
 
 const normalizePostType = (value: unknown): PostType =>
   value === "podcast" ? "podcast" : "blog";
+
+const parseTags = (value: AgriLearnPostTagsRequestBody["tags"]) => {
+  const rawTags = Array.isArray(value) ? value : String(value ?? "").split(",");
+  const tags = [
+    ...new Set(
+      rawTags
+        .map((tag) => tag.trim().replace(/^#+/, "").toLowerCase())
+        .filter(Boolean),
+    ),
+  ];
+  if (tags.length > 10) return { error: "Add no more than 10 tags" } as const;
+  if (tags.some((tag) => tag.length > 40))
+    return { error: "Each tag must be 40 characters or fewer" } as const;
+  return { tags } as const;
+};
 
 const isValidHttpUrl = (value: string) => {
   try {
@@ -45,7 +62,10 @@ export const listPublishedPosts = async (req: Request, res: Response) => {
     ? (req.query.postType as PostType)
     : undefined;
   const limit = Math.min(Math.max(Number(req.query.limit) || 0, 0), 20);
-  const query = postType ? { status: "published", postType } : { status: "published" };
+  const tag = String(req.query.tag ?? "").trim().toLowerCase();
+  const query: Record<string, unknown> = { status: "published" };
+  if (postType) query.postType = postType;
+  if (tag) query.tags = tag;
   const finder = AgriLearnPost.find(query)
     .sort({ publishedAt: -1 })
     .select("-content");
@@ -65,7 +85,7 @@ export const getPublishedPost = async (req: Request, res: Response) => {
     _id: { $ne: post._id },
     status: "published",
     category: post.category,
-  }).sort({ publishedAt: -1 }).limit(3).select("title slug postType excerpt category heroImage media videoUrl publishedAt createdAt");
+  }).sort({ publishedAt: -1 }).limit(3).select("title slug postType excerpt category tags heroImage media videoUrl publishedAt createdAt");
   return res.json({ success: true, data: { post, relatedPosts } });
 };
 
@@ -77,6 +97,9 @@ export const listAdminPosts = async (req: Request, res: Response) => {
 export const createPost = async (req: Request, res: Response) => {
   const { title, excerpt, content, category, status = "published", videoUrl } = req.body;
   const postType = normalizePostType(req.body.postType);
+  const parsedTags = parseTags(req.body.tags);
+  if ("error" in parsedTags)
+    return res.status(400).json({ success: false, message: parsedTags.error });
   if (!title?.trim() || !excerpt?.trim())
     return res.status(400).json({
       success: false,
@@ -107,6 +130,7 @@ export const createPost = async (req: Request, res: Response) => {
     content: postType === "blog" ? content : undefined,
     videoUrl: postType === "podcast" ? videoUrl.trim() : undefined,
     category,
+    tags: parsedTags.tags,
     status,
     heroImage,
     bodyMedia,
@@ -127,6 +151,12 @@ export const updatePost = async (req: Request, res: Response) => {
     return res.status(400).json({ success: false, message: "Article content is required" });
   if (nextPostType === "podcast" && req.body.videoUrl !== undefined && !isYouTubeUrl(req.body.videoUrl.trim()))
     return res.status(400).json({ success: false, message: "A valid YouTube video link is required" });
+  if (req.body.tags !== undefined) {
+    const parsedTags = parseTags(req.body.tags);
+    if ("error" in parsedTags)
+      return res.status(400).json({ success: false, message: parsedTags.error });
+    post.tags = parsedTags.tags;
+  }
   for (const key of [
     "title",
     "excerpt",
@@ -159,5 +189,6 @@ export const deletePost = async (req: Request, res: Response) => {
   const post = await AgriLearnPost.findByIdAndDelete(req.params.postId);
   if (!post)
     return res.status(404).json({ success: false, message: "Post not found" });
+  await AgriLearnComment.deleteMany({ post: post._id });
   return res.json({ success: true });
 };

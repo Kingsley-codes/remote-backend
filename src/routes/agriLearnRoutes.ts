@@ -1,5 +1,9 @@
 import { Router } from "express";
-import { adminAuthenticate } from "../middleware/authenticationMiddleware.js";
+import {
+  adminAuthenticate,
+  optionalUserAuthenticate,
+  userAuthenticate,
+} from "../middleware/authenticationMiddleware.js";
 import {
   uploadPostMedia,
   handleUploadErrors,
@@ -12,9 +16,21 @@ import {
   updatePost,
   deletePost,
 } from "../controllers/agriLearnController.js";
+import {
+  createPostComment,
+  deletePostComment,
+  listPostComments,
+} from "../controllers/agriLearnCommentController.js";
 
 export const agriLearnRouter = Router();
 agriLearnRouter.get("/", listPublishedPosts);
+agriLearnRouter.get("/:slug/comments", optionalUserAuthenticate, listPostComments);
+agriLearnRouter.post("/:slug/comments", userAuthenticate, createPostComment);
+agriLearnRouter.delete(
+  "/:slug/comments/:commentId",
+  userAuthenticate,
+  deletePostComment,
+);
 agriLearnRouter.get("/:slug", getPublishedPost);
 
 export const adminAgriLearnRouter = Router();

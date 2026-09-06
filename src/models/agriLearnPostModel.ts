@@ -14,6 +14,10 @@ const postSchema = new Schema({
   content: { type: String, trim: true, maxlength: 50000 },
   videoUrl: { type: String, trim: true },
   category: { type: String, required: true, trim: true, default: "Agriculture" },
+  tags: {
+    type: [{ type: String, trim: true, lowercase: true, maxlength: 40 }],
+    default: [],
+  },
   heroImage: { type: mediaSchema, default: undefined },
   bodyMedia: { type: mediaSchema, default: undefined },
   // Retained temporarily so existing articles can be read during migration.
@@ -25,4 +29,5 @@ const postSchema = new Schema({
 postSchema.index({ status: 1, publishedAt: -1 });
 postSchema.index({ status: 1, category: 1, publishedAt: -1 });
 postSchema.index({ status: 1, postType: 1, publishedAt: -1 });
+postSchema.index({ status: 1, tags: 1, publishedAt: -1 });
 export default model("AgriLearnPost", postSchema);

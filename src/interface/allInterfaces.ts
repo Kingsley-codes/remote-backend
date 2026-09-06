@@ -12,6 +12,14 @@ export interface RegisterRequestBody {
   referralCode?: string;
 }
 
+export interface AgriLearnCommentRequestBody {
+  body: string;
+}
+
+export interface AgriLearnPostTagsRequestBody {
+  tags?: string | string[];
+}
+
 export interface AuthResponse {
   status: "success" | "fail" | "error";
   message?: string;
