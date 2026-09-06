@@ -81,11 +81,50 @@ export const getPublishedPost = async (req: Request, res: Response) => {
   });
   if (!post)
     return res.status(404).json({ success: false, message: "Post not found" });
-  const relatedPosts = await AgriLearnPost.find({
-    _id: { $ne: post._id },
-    status: "published",
-    category: post.category,
-  }).sort({ publishedAt: -1 }).limit(3).select("title slug postType excerpt category tags heroImage media videoUrl publishedAt createdAt");
+  const relatedPosts = post.tags.length
+    ? await AgriLearnPost.aggregate([
+        {
+          $match: {
+            _id: { $ne: post._id },
+            status: "published",
+            tags: { $in: post.tags },
+          },
+        },
+        {
+          $addFields: {
+            matchingTagCount: {
+              $size: { $setIntersection: ["$tags", post.tags] },
+            },
+          },
+        },
+        { $sort: { matchingTagCount: -1, publishedAt: -1 } },
+        { $limit: 3 },
+        {
+          $project: {
+            title: 1,
+            slug: 1,
+            postType: 1,
+            excerpt: 1,
+            category: 1,
+            tags: 1,
+            heroImage: 1,
+            media: 1,
+            videoUrl: 1,
+            publishedAt: 1,
+            createdAt: 1,
+          },
+        },
+      ])
+    : await AgriLearnPost.find({
+        _id: { $ne: post._id },
+        status: "published",
+        category: post.category,
+      })
+        .sort({ publishedAt: -1 })
+        .limit(3)
+        .select(
+          "title slug postType excerpt category tags heroImage media videoUrl publishedAt createdAt",
+        );
   return res.json({ success: true, data: { post, relatedPosts } });
 };
 
