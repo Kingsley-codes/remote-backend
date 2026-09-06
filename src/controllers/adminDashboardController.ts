@@ -758,7 +758,7 @@ export const getAllPayments = async (req: Request, res: Response) => {
 
     const [allPayments, total] = await Promise.all([
       Transaction.find(filter)
-        .populate("user", "firstName lastName profilePhoto email")
+        .populate("user", "firstName lastName profilePhoto email farmerID")
         .populate("produce", "title")
         .skip(skip)
         .limit(limit)
