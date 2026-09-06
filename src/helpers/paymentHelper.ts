@@ -1,3 +1,4 @@
+import { normalizeStage } from "../utils/productionStages.js";
 import crypto from "crypto";
 import { PaystackEventData } from "../interface/allInterfaces.js";
 import Produce from "../models/produceModel.js";
@@ -64,6 +65,7 @@ export const handleChargeSuccess = async (eventData: PaystackEventData) => {
       transactionRef: payment.transactionRef,
       duration: produce.duration,
       ROI: produce.ROI,
+      stage: normalizeStage(produce.stage, produce.category),
     });
     await awardReferralCommission(
       payment.user.toString(),

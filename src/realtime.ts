@@ -47,7 +47,7 @@ export function initializeRealtime(server: HttpServer, origins: string[]) {
       const identity = socket.data.identity as { id: string; type: "user" | "admin" } | null;
       const valid = roomId === "general" || Boolean(
         identity?.type === "user"
-        && await Produce.exists({ _id: roomId, status: "active" })
+        && await Produce.exists({ _id: roomId, status: { $in: ["active", "closed", "sold out"] } })
         && await Investment.exists({ user: identity.id, produce: roomId, status: "ongoing", orderStatus: "confirmed" }),
       );
       if (valid) socket.join(`forum:${roomId}`);

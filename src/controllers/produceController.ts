@@ -5,7 +5,7 @@ export const getAllProduce = async (req: Request, res: Response) => {
   try {
     const { isFeatured } = req.query;
 
-    const filter: any = {};
+    const filter: any = { status: "active", remainingUnit: { $gt: 0 } };
 
     // only apply filter if it was sent
     if (typeof isFeatured === "string") {

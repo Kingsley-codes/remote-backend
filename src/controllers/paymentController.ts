@@ -1,3 +1,4 @@
+import { normalizeStage } from "../utils/productionStages.js";
 import { Request, Response } from "express";
 import User from "../models/userModel.js";
 import {
@@ -52,6 +53,12 @@ const handleWalletPayment = async (
 
   try {
     session.startTransaction();
+    const produce = await Produce.findOneAndUpdate(
+      { _id: produceId, status: "active", remainingUnit: { $gte: units }, minimumUnit: { $lte: units } },
+      { $inc: { remainingUnit: -units } },
+      { new: true, session },
+    );
+    if (!produce) throw new Error("This opportunity is closed or the requested units are unavailable");
     const userWallet = await Wallet.findOneAndUpdate(
       { user: userId, balance: { $gte: Number(amount) } },
       { $inc: { balance: -Number(amount) } },
@@ -90,6 +97,7 @@ const handleWalletPayment = async (
       customerEmail: email,
       duration: duration,
       ROI,
+      stage: normalizeStage(produce.stage, produce.category),
     });
     await newInvestment.save({ session });
     await syncUserActiveInvestmentStatus(userId);
@@ -185,6 +193,10 @@ export const initializePayment = async (req: Request, res: Response) => {
         success: false,
         message: "Produce not found",
       });
+    }
+
+    if (produce.status !== "active") {
+      return res.status(409).json({ success: false, message: "This opportunity is closed to new investments" });
     }
 
     if (numericUnits < produce.minimumUnit || numericUnits > produce.remainingUnit) {
@@ -430,6 +442,7 @@ export const verifyPayment = async (
         transactionRef: payment.transactionRef,
         duration: produce.duration,
         ROI: produce.ROI,
+        stage: normalizeStage(produce.stage, produce.category),
       });
       await syncUserActiveInvestmentStatus(payment.user.toString());
       await awardReferralCommission(

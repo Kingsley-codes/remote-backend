@@ -1,3 +1,4 @@
+import { productionStages } from "../utils/productionStages.js";
 import { Schema, model, InferSchemaType, HydratedDocument } from "mongoose";
 
 const investmentSchema = new Schema(
@@ -49,14 +50,8 @@ const investmentSchema = new Schema(
     },
     stage: {
       type: String,
-      enum: [
-        "accepting-investments",
-        "land-clearing",
-        "planting",
-        "growing",
-        "harvesting",
-      ],
-      default: "accepting-investments",
+      enum: [...productionStages, "accepting-investments"],
+      default: "preparation",
     },
     harvestChoice: {
       type: String,

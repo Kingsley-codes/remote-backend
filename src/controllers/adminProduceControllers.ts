@@ -1,3 +1,4 @@
+import { stagesByCategory, normalizeStage, type FarmCategory } from "../utils/productionStages.js";
 import { Request, Response } from "express";
 import Produce from "../models/produceModel.js";
 import {
@@ -93,6 +94,7 @@ export const createProduce = async (
       ROI,
       produceID: generateProduceID(),
       category,
+      stage: category === "aquaculture" ? "pond-preparation" : "preparation",
       image1: {
         publicId: uploadResult1.public_id,
         url: uploadResult1.secure_url,
@@ -213,7 +215,7 @@ export const editProduce = async (
     const image2file = req.files.image2?.[0];
     const image3file = req.files.image3?.[0];
 
-    const existingProduce = await Produce.findOne({ title: title });
+    const existingProduce = await Produce.findOne({ title, _id: { $ne: produceId } });
     if (existingProduce) {
       return res.status(400).json({
         message: "Produce with this title already exists",
@@ -239,7 +241,14 @@ export const editProduce = async (
     if (totalUnit) updatedProduce.totalUnit = totalUnit;
     if (description) updatedProduce.description = description;
     if (price) updatedProduce.price = price;
-    if (category) updatedProduce.category = category;
+    if (category && category !== updatedProduce.category) {
+      if (await Investment.exists({ produce: produceId })) {
+        return res.status(409).json({ message: "Category cannot change after investments have been created" });
+      }
+      updatedProduce.category = category;
+      updatedProduce.stage = category === "aquaculture" ? "pond-preparation" : "preparation";
+    }
+    updatedProduce.stage = normalizeStage(updatedProduce.stage, updatedProduce.category);
 
     if (image1file) {
       if (updatedProduce.image1 && updatedProduce.image1.publicId) {
@@ -319,7 +328,7 @@ export const getAllProduce = async (req: Request, res: Response) => {
 
     return res.status(200).json({
       status: "success",
-      produce: produceList,
+      produce: produceList.map((produce) => ({ ...produce.toObject(), stage: normalizeStage(produce.stage, produce.category) })),
     });
   } catch (error: any) {
     console.error("Error fetching produce:", error);
@@ -425,34 +434,14 @@ export const updateProduceStage = async (req: Request, res: Response) => {
     const produceID = String(req.params.produceID);
     const stage = String(req.body.stage ?? "");
 
-    const validStages = [
-      "accepting-investments",
-      "land-clearing",
-      "planting",
-      "growing",
-      "harvesting",
-    ];
-
-    if (!validStages.includes(stage)) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid stage provided",
-      });
+    const updatedProduce = await Produce.findById(produceID);
+    if (!updatedProduce) return res.status(404).json({ success: false, message: "Produce not found" });
+    const validStages: readonly string[] = stagesByCategory[updatedProduce.category as FarmCategory];
+    if (!validStages?.includes(stage)) {
+      return res.status(400).json({ success: false, message: "Invalid stage for this category" });
     }
-
-    // FIND PRODUCE
-    const updatedProduce = await Produce.findByIdAndUpdate(
-      produceID,
-      { stage },
-      { new: true },
-    );
-
-    if (!updatedProduce) {
-      return res.status(404).json({
-        success: false,
-        message: "Produce not found",
-      });
-    }
+    updatedProduce.stage = normalizeStage(stage, updatedProduce.category);
+    await updatedProduce.save();
 
     await Investment.updateMany(
       { produce: produceID, status: "ongoing" },
@@ -514,4 +503,14 @@ export const updateProduceStage = async (req: Request, res: Response) => {
       error: error.message,
     });
   }
+};
+
+export const updateProduceStatus = async (req: Request, res: Response) => {
+  const { status } = req.body;
+  if (status !== "active" && status !== "closed") {
+    return res.status(400).json({ success: false, message: "Status must be active or closed" });
+  }
+  const produce = await Produce.findByIdAndUpdate(req.params.produceID, { status }, { new: true, runValidators: true });
+  if (!produce) return res.status(404).json({ success: false, message: "Produce not found" });
+  return res.json({ success: true, produce });
 };

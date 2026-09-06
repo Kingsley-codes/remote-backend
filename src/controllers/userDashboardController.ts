@@ -1,3 +1,5 @@
+import { buildWalletFilter } from "../utils/walletFilters.js";
+import { fulfillmentStages, normalizeStage } from "../utils/productionStages.js";
 import { Request, Response } from "express";
 import Investment from "../models/investmentModel.js";
 import { createRecipient, initiateTransfer } from "../utils/paystackUtils.js";
@@ -24,7 +26,7 @@ export const getUserDashboardOverview = async (req: Request, res: Response) => {
 
     const [userInvestments, wallet] = await Promise.all([
       Investment.find({ user: userId })
-        .populate("produce", "produceName title stage image1 image2 image3")
+        .populate("produce", "produceName title category status stage image1 image2 image3")
         .populate("payment", "amount status")
         .sort({ orderDate: -1 }),
       Wallet.findOne({ user: userId }),
@@ -41,7 +43,11 @@ export const getUserDashboardOverview = async (req: Request, res: Response) => {
       success: true,
       data: {
         walletBalance: wallet?.balance ?? 0,
-        userInvestments,
+        userInvestments: userInvestments.map((investment) => {
+          const record = investment.toObject();
+          const produce = record.produce as unknown as { category?: string } | null;
+          return { ...record, stage: normalizeStage(record.stage, produce?.category ?? "crops") };
+        }),
         totalInvestedAmount,
         totalActiveInvestments: activeInvestments.length,
       },
@@ -70,16 +76,19 @@ export const getUserTransactionHistory = async (
 
     // pagination
     const page = Math.max(Number(req.query.page) || 1, 1);
-    const limit = Math.max(Number(req.query.limit) || 10, 1);
+    const limit = Math.min(Math.max(Math.floor(Number(req.query.limit) || 10), 1), 100);
+    let filter;
+    try { filter = { user: userId, ...buildWalletFilter(req.query) }; }
+    catch (error) { return res.status(400).json({ success: false, message: (error as Error).message }); }
 
     const [transactions, total] = await Promise.all([
-      Transaction.find({ user: userId })
+      Transaction.find(filter)
         .populate("produce", "produceName title")
         .sort({ createdAt: -1 })
         .skip((page - 1) * limit)
         .limit(limit)
         .lean(),
-      Transaction.countDocuments({ user: userId }),
+      Transaction.countDocuments(filter),
     ]);
 
     const history = transactions
@@ -164,6 +173,7 @@ export const getUserTransactionHistory = async (
       success: true,
       data: {
         transactions: history,
+        meta: { page, total, totalPages: Math.max(1, Math.ceil(total / limit)), limit },
       },
     });
   } catch (error: any) {
@@ -219,7 +229,7 @@ export const getUserInvestments = async (req: Request, res: Response) => {
     }
 
     const userInvestments = await Investment.find({ user: userId })
-      .populate("produce", "name stage image1 image2 image3")
+      .populate("produce", "produceName title category status stage image1 image2 image3")
       .populate("payment", "amount status");
 
     const totalInvestedAmount = userInvestments.reduce((total, investment) => {
@@ -233,7 +243,11 @@ export const getUserInvestments = async (req: Request, res: Response) => {
     return res.status(200).json({
       success: true,
       data: {
-        userInvestments,
+        userInvestments: userInvestments.map((investment) => {
+          const record = investment.toObject();
+          const produce = record.produce as unknown as { category?: string } | null;
+          return { ...record, stage: normalizeStage(record.stage, produce?.category ?? "crops") };
+        }),
         totalInvestedAmount,
         totalActiveInvestments,
       },
@@ -277,7 +291,7 @@ export const chooseHarvestReturn = async (req: Request, res: Response) => {
         user: userId,
         orderStatus: "confirmed",
         status: "ongoing",
-        stage: "harvesting",
+        stage: { $in: fulfillmentStages },
         harvestChoice: null,
       },
       {
@@ -292,7 +306,7 @@ export const chooseHarvestReturn = async (req: Request, res: Response) => {
       return res.status(409).json({
         success: false,
         message:
-          "Harvest choice is only available once, for confirmed farms at harvesting stage",
+          "Harvest choice is only available once, for confirmed farms ready for fulfillment",
       });
     }
 

@@ -1,3 +1,4 @@
+import { fulfillmentStages, normalizeStage } from "../utils/productionStages.js";
 import { Request, Response } from "express";
 import User from "../models/userModel.js";
 import Investment from "../models/investmentModel.js";
@@ -53,7 +54,7 @@ export const getDashboardOverview = async (req: Request, res: Response) => {
         },
       ]),
       User.countDocuments(),
-      Produce.countDocuments({ status: { $ne: "closed" } }),
+      Produce.countDocuments({ status: "active" }),
       Transaction.aggregate([
         {
           $match: {
@@ -463,79 +464,63 @@ export const getInvestments = async (req: Request, res: Response) => {
       });
     }
 
-    const {
-      status,
-      date,
-      startDate,
-      endDate,
-      search,
-      page = "1",
-    } = req.query as any;
-
-    const pageNumber = Math.max(parseInt(page) || 1, 1);
+    const { status, date, startDate, endDate, project, category } = req.query;
+    const search = String(req.query.search ?? req.query.q ?? "").trim();
+    const pageNumber = Math.max(Math.floor(Number(req.query.page) || 1), 1);
     const limit = 10;
-    const skip = (pageNumber - 1) * limit;
-
-    const match: any = {
-      ...buildDateFilter({ date, startDate, endDate }),
+    const match: Record<string, unknown> = {
+      ...buildDateFilter({ date: String(date ?? ""), startDate: String(startDate ?? ""), endDate: String(endDate ?? "") }),
     };
-
     if (status) {
-      match.orderStatus = status;
+      if (["ongoing", "completed"].includes(String(status))) {
+        match.status = status;
+        match.orderStatus = "confirmed";
+      } else if (["pending", "confirmed", "cancelled"].includes(String(status))) match.orderStatus = status;
+      else return res.status(400).json({ success: false, message: "Invalid ownership status" });
     }
-
-    const investments = await Investment.aggregate([
-      { $match: match },
-
-      {
-        $lookup: {
-          from: "users",
-          localField: "user",
-          foreignField: "_id",
-          as: "investor",
-        },
-      },
-      { $unwind: { path: "$investor", preserveNullAndEmptyArrays: true } },
-
-      {
-        $lookup: {
-          from: "produces",
-          localField: "produce",
-          foreignField: "_id",
-          as: "produce",
-        },
-      },
-      { $unwind: { path: "$produce", preserveNullAndEmptyArrays: true } },
-
-      ...(search
-        ? [
-            {
-              $match: {
-                $or: [
-                  { "investor.firstName": { $regex: search, $options: "i" } },
-                  { "investor.lastName": { $regex: search, $options: "i" } },
-                  { title: { $regex: search, $options: "i" } },
-                ],
-              },
-            },
-          ]
-        : []),
-
-      { $sort: { createdAt: -1 } },
-      { $skip: skip },
-      { $limit: limit },
+    if (project) {
+      if (typeof project !== "string" || !/^[a-f0-9]{24}$/i.test(project)) return res.status(400).json({ success: false, message: "Invalid project" });
+      match.produce = project;
+    }
+    if (category && !["crops", "livestock", "aquaculture"].includes(String(category))) {
+      return res.status(400).json({ success: false, message: "Invalid category" });
+    }
+    const escapedSearch = search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const [results, projects] = await Promise.all([
+      Investment.aggregate([
+        { $match: match },
+        { $lookup: { from: "users", localField: "user", foreignField: "_id", as: "investor" } },
+        { $unwind: { path: "$investor", preserveNullAndEmptyArrays: true } },
+        // Investments store their project ID as a string, while produces use ObjectIds.
+        { $addFields: { produceObjectId: { $convert: { input: "$produce", to: "objectId", onError: null, onNull: null } } } },
+        { $lookup: { from: "produces", localField: "produceObjectId", foreignField: "_id", as: "produce" } },
+        { $unwind: { path: "$produce", preserveNullAndEmptyArrays: true } },
+        ...(category ? [{ $match: { "produce.category": category } }] : []),
+        ...(search ? [{ $match: { $or: [
+          { "investor.firstName": { $regex: escapedSearch, $options: "i" } },
+          { "investor.lastName": { $regex: escapedSearch, $options: "i" } },
+          { "investor.email": { $regex: escapedSearch, $options: "i" } },
+          { title: { $regex: escapedSearch, $options: "i" } },
+          { orderID: { $regex: escapedSearch, $options: "i" } },
+        ] } }] : []),
+        { $project: { "investor.password": 0, "investor.oauthProviders": 0, "investor.googleId": 0, produceObjectId: 0 } },
+        { $facet: {
+          data: [{ $sort: { createdAt: -1, _id: -1 } }, { $skip: (pageNumber - 1) * limit }, { $limit: limit }],
+          total: [{ $count: "count" }],
+        } },
+      ]),
+      Produce.find().select("title produceName category").sort({ title: 1 }).lean(),
     ]);
-
-    const total = await Investment.countDocuments(match);
-
+    const result = results[0];
+    const total = result?.total[0]?.count ?? 0;
     return res.status(200).json({
       success: true,
-      data: investments,
-      pagination: {
-        page: pageNumber,
-        pages: Math.ceil(total / limit),
-        total,
-      },
+      data: (result?.data ?? []).map((investment: any) => ({
+        ...investment,
+        stage: normalizeStage(investment.stage, investment.produce?.category),
+      })),
+      projects,
+      pagination: { page: pageNumber, pages: Math.max(1, Math.ceil(total / limit)), total },
     });
   } catch (error) {
     console.error("Investment fetch error:", error);
@@ -563,7 +548,7 @@ export const markPhysicalProduceDelivered = async (
     const investment = await Investment.findOneAndUpdate(
       {
         _id: req.params.investmentId,
-        stage: "harvesting",
+        stage: { $in: fulfillmentStages },
         harvestChoice: "physical-produce",
         harvestFulfillmentStatus: "pending-delivery",
       },
@@ -615,7 +600,7 @@ export const approveCashHarvestReturn = async (req: Request, res: Response) => {
     await session.withTransaction(async () => {
       const investment = await Investment.findOne({
         _id: req.params.investmentId,
-        stage: "harvesting",
+        stage: { $in: fulfillmentStages },
         harvestChoice: "cash-return",
         harvestFulfillmentStatus: "pending-approval",
       }).session(session);

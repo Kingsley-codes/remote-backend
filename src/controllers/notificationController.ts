@@ -56,7 +56,7 @@ export const adminCreateNotification = async (req: Request, res: Response) => {
   const title = String(req.body.title ?? "").trim();
   const message = String(req.body.message ?? "").trim();
   if (!title || !message || title.length > 120 || message.length > 1000) return res.status(400).json({ message: "A title and message are required" });
-  if (!await Produce.exists({ _id: produceId, status: "active" })) return res.status(404).json({ message: "Active produce not found" });
+  if (!await Produce.exists({ _id: produceId, status: { $in: ["active", "closed", "sold out"] } })) return res.status(404).json({ message: "Produce not found" });
   const notification = await createProduceNotification({ produceId, title, message, type: "admin", adminId: req.admin });
   return res.status(201).json({ success: true, notification });
 };

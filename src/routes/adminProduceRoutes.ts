@@ -7,6 +7,7 @@ import {
   getAllProduce,
   suspendProduce,
   updateProduceStage,
+  updateProduceStatus,
 } from "../controllers/adminProduceControllers.js";
 import { adminAuthenticate } from "../middleware/authenticationMiddleware.js";
 import {
@@ -33,6 +34,7 @@ adminProduceRouter.post(
   adminAuthenticate,
   activateProduce,
 );
+adminProduceRouter.patch("/:produceID/status", adminAuthenticate, updateProduceStatus);
 adminProduceRouter.patch("/:produceID/stage", adminAuthenticate, updateProduceStage);
 adminProduceRouter.post(
   "/suspend/:produceId",

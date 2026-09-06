@@ -17,13 +17,13 @@ export const getRooms = async (req: Request, res: Response) => {
   const produceIds = req.user
     ? await Investment.distinct("produce", { user: req.user, status: "ongoing", orderStatus: "confirmed" })
     : [];
-  const produce = await Produce.find({ _id: { $in: produceIds }, status: "active" }).select("produceName title stage image1").sort({ createdAt: -1 });
+  const produce = await Produce.find({ _id: { $in: produceIds }, status: { $in: ["active", "closed", "sold out"] } }).select("produceName title stage image1").sort({ createdAt: -1 });
   return res.json({ success: true, rooms: [{ id: "general", title: "General", type: "general" }, ...produce.map((item) => ({ id: item.id, title: item.produceName, subtitle: item.title, type: "produce", stage: item.stage, image: item.image1?.url }))] });
 };
 
 export const getMessages = async (req: Request, res: Response) => {
   const room = String(req.params.room);
-  if (room !== "general" && !await Produce.exists({ _id: room, status: "active" })) return res.status(404).json({ message: "Room not found" });
+  if (room !== "general" && !await Produce.exists({ _id: room, status: { $in: ["active", "closed", "sold out"] } })) return res.status(404).json({ message: "Room not found" });
   if (room !== "general" && !await canAccessRoom(req.user, room)) return res.status(403).json({ message: "This room is only available to remote farmers who own this produce" });
   const messages = await ForumMessage.find({ ...roomFilter(room), parent: null }).populate("author", "username firstName lastName profilePhoto").sort({ createdAt: -1 }).limit(100).lean();
   const ids = messages.map((message) => message._id);
