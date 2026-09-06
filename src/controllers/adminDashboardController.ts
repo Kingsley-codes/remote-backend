@@ -1,4 +1,7 @@
-import { fulfillmentStages, normalizeStage } from "../utils/productionStages.js";
+import {
+  fulfillmentStages,
+  normalizeStage,
+} from "../utils/productionStages.js";
 import { Request, Response } from "express";
 import User from "../models/userModel.js";
 import Investment from "../models/investmentModel.js";
@@ -469,47 +472,127 @@ export const getInvestments = async (req: Request, res: Response) => {
     const pageNumber = Math.max(Math.floor(Number(req.query.page) || 1), 1);
     const limit = 10;
     const match: Record<string, unknown> = {
-      ...buildDateFilter({ date: String(date ?? ""), startDate: String(startDate ?? ""), endDate: String(endDate ?? "") }),
+      ...buildDateFilter({
+        date: String(date ?? ""),
+        startDate: String(startDate ?? ""),
+        endDate: String(endDate ?? ""),
+      }),
     };
     if (status) {
       if (["ongoing", "completed"].includes(String(status))) {
         match.status = status;
         match.orderStatus = "confirmed";
-      } else if (["pending", "confirmed", "cancelled"].includes(String(status))) match.orderStatus = status;
-      else return res.status(400).json({ success: false, message: "Invalid ownership status" });
+      } else if (["pending", "confirmed", "cancelled"].includes(String(status)))
+        match.orderStatus = status;
+      else
+        return res
+          .status(400)
+          .json({ success: false, message: "Invalid ownership status" });
     }
     if (project) {
-      if (typeof project !== "string" || !/^[a-f0-9]{24}$/i.test(project)) return res.status(400).json({ success: false, message: "Invalid project" });
+      if (typeof project !== "string" || !/^[a-f0-9]{24}$/i.test(project))
+        return res
+          .status(400)
+          .json({ success: false, message: "Invalid project" });
       match.produce = project;
     }
-    if (category && !["crops", "livestock", "aquaculture"].includes(String(category))) {
-      return res.status(400).json({ success: false, message: "Invalid category" });
+    if (
+      category &&
+      !["crops", "livestock", "aquaculture"].includes(String(category))
+    ) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid category" });
     }
     const escapedSearch = search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const [results, projects] = await Promise.all([
       Investment.aggregate([
         { $match: match },
-        { $lookup: { from: "users", localField: "user", foreignField: "_id", as: "investor" } },
+        {
+          $lookup: {
+            from: "users",
+            localField: "user",
+            foreignField: "_id",
+            as: "investor",
+          },
+        },
         { $unwind: { path: "$investor", preserveNullAndEmptyArrays: true } },
         // Investments store their project ID as a string, while produces use ObjectIds.
-        { $addFields: { produceObjectId: { $convert: { input: "$produce", to: "objectId", onError: null, onNull: null } } } },
-        { $lookup: { from: "produces", localField: "produceObjectId", foreignField: "_id", as: "produce" } },
+        {
+          $addFields: {
+            produceObjectId: {
+              $convert: {
+                input: "$produce",
+                to: "objectId",
+                onError: null,
+                onNull: null,
+              },
+            },
+          },
+        },
+        {
+          $lookup: {
+            from: "produces",
+            localField: "produceObjectId",
+            foreignField: "_id",
+            as: "produce",
+          },
+        },
         { $unwind: { path: "$produce", preserveNullAndEmptyArrays: true } },
         ...(category ? [{ $match: { "produce.category": category } }] : []),
-        ...(search ? [{ $match: { $or: [
-          { "investor.firstName": { $regex: escapedSearch, $options: "i" } },
-          { "investor.lastName": { $regex: escapedSearch, $options: "i" } },
-          { "investor.email": { $regex: escapedSearch, $options: "i" } },
-          { title: { $regex: escapedSearch, $options: "i" } },
-          { orderID: { $regex: escapedSearch, $options: "i" } },
-        ] } }] : []),
-        { $project: { "investor.password": 0, "investor.oauthProviders": 0, "investor.googleId": 0, produceObjectId: 0 } },
-        { $facet: {
-          data: [{ $sort: { createdAt: -1, _id: -1 } }, { $skip: (pageNumber - 1) * limit }, { $limit: limit }],
-          total: [{ $count: "count" }],
-        } },
+        ...(search
+          ? [
+              {
+                $match: {
+                  $or: [
+                    {
+                      "investor.firstName": {
+                        $regex: escapedSearch,
+                        $options: "i",
+                      },
+                    },
+                    {
+                      "investor.lastName": {
+                        $regex: escapedSearch,
+                        $options: "i",
+                      },
+                    },
+                    {
+                      "investor.email": {
+                        $regex: escapedSearch,
+                        $options: "i",
+                      },
+                    },
+                    { title: { $regex: escapedSearch, $options: "i" } },
+                    { orderID: { $regex: escapedSearch, $options: "i" } },
+                  ],
+                },
+              },
+            ]
+          : []),
+        {
+          $project: {
+            "investor.password": 0,
+            "investor.oauthProviders": 0,
+            "investor.googleId": 0,
+            produceObjectId: 0,
+          },
+        },
+        {
+          $facet: {
+            data: [
+              { $sort: { createdAt: -1, _id: -1 } },
+              { $skip: (pageNumber - 1) * limit },
+              { $limit: limit },
+            ],
+            total: [{ $count: "count" }],
+          },
+        },
       ]),
-      Produce.find().select("title produceName category").sort({ title: 1 }).lean(),
+      Produce.find()
+        .select("title produceName category")
+        .sort({ title: 1 })
+        .lean(),
     ]);
     const result = results[0];
     const total = result?.total[0]?.count ?? 0;
@@ -520,7 +603,11 @@ export const getInvestments = async (req: Request, res: Response) => {
         stage: normalizeStage(investment.stage, investment.produce?.category),
       })),
       projects,
-      pagination: { page: pageNumber, pages: Math.max(1, Math.ceil(total / limit)), total },
+      pagination: {
+        page: pageNumber,
+        pages: Math.max(1, Math.ceil(total / limit)),
+        total,
+      },
     });
   } catch (error) {
     console.error("Investment fetch error:", error);
@@ -835,7 +922,7 @@ export const getAllWithdrawals = async (req: Request, res: Response) => {
 
     const [allWithdrawals, total] = await Promise.all([
       Transaction.find(filter)
-        .populate("user", "firstName lastName profilePhoto email")
+        .populate("user", "firstName lastName profilePhoto email farmerID")
         .skip(skip)
         .limit(limit)
         .sort({ createdAt: -1 }),
