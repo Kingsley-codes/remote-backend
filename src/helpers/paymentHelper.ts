@@ -14,10 +14,10 @@ import {
 
 // Helper function to generate unique IDs
 export const generatePaymentID = () =>
-  "RAI-" + Math.random().toString(36).substring(2, 10).toUpperCase();
+  "RAI-" + crypto.randomBytes(8).toString("hex").toUpperCase();
 
 export const generateOrderID = () =>
-  "RAO-" + Math.random().toString(36).substring(2, 10).toUpperCase();
+  "RAO-" + crypto.randomBytes(8).toString("hex").toUpperCase();
 
 export const generateReference = (prefix = "ps") => {
   const unique = crypto.randomBytes(12).toString("hex"); // 12-char random string

@@ -25,16 +25,23 @@ import Transaction from "../models/transactionModel.js";
 import { sendInvestmentPaymentEmail } from "../services/emailService.js";
 import validator from "validator";
 
-const syncUserActiveInvestmentStatus = async (userId: string) => {
-  const hasActiveInvestment = await Investment.exists({
+const syncUserActiveInvestmentStatus = async (
+  userId: string,
+  session?: mongoose.ClientSession,
+) => {
+  const investmentQuery = Investment.exists({
     user: userId,
     orderStatus: "confirmed",
     status: "ongoing",
   });
+  if (session) investmentQuery.session(session);
+  const hasActiveInvestment = await investmentQuery;
 
-  await User.findByIdAndUpdate(userId, {
-    hasActiveInvestment: Boolean(hasActiveInvestment),
-  });
+  await User.findByIdAndUpdate(
+    userId,
+    { hasActiveInvestment: Boolean(hasActiveInvestment) },
+    session ? { session } : undefined,
+  );
 
   return Boolean(hasActiveInvestment);
 };
@@ -66,7 +73,7 @@ const handleWalletPayment = async (
     );
 
     if (!userWallet) {
-      throw new Error("User wallet not found");
+      throw new Error("INSUFFICIENT_WALLET_BALANCE");
     }
 
     const paymentID = generatePaymentID();
@@ -100,7 +107,7 @@ const handleWalletPayment = async (
       stage: normalizeStage(produce.stage, produce.category),
     });
     await newInvestment.save({ session });
-    await syncUserActiveInvestmentStatus(userId);
+    await syncUserActiveInvestmentStatus(userId, session);
     await awardReferralCommission(
       userId,
       newInvestment._id.toString(),
@@ -151,6 +158,12 @@ export const initializePayment = async (req: Request, res: Response) => {
       !Number.isSafeInteger(numericUnits) || numericUnits <= 0
     ) {
       return res.status(400).json({ success: false, message: "Invalid payment amount or investment units" });
+    }
+    if (paymentMethod !== "card" && paymentMethod !== "wallet") {
+      return res.status(400).json({ success: false, message: "Unsupported payment method" });
+    }
+    if (paymentMethod === "wallet" && !userId) {
+      return res.status(401).json({ success: false, message: "Sign in to pay with your Agro Wallet" });
     }
 
     let user;
@@ -240,9 +253,12 @@ export const initializePayment = async (req: Request, res: Response) => {
           },
         });
       } catch (error: any) {
-        return res.status(500).json({
+        const insufficientBalance = error?.message === "INSUFFICIENT_WALLET_BALANCE";
+        return res.status(insufficientBalance ? 409 : 500).json({
           success: false,
-          message: "Failed to process wallet payment",
+          message: insufficientBalance
+            ? "Insufficient Agro Wallet balance"
+            : "Failed to process wallet payment",
           error: "Payment could not be completed",
         });
       }

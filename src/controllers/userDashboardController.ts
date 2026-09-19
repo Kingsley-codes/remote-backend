@@ -38,6 +38,11 @@ export const getUserDashboardOverview = async (req: Request, res: Response) => {
       (total, investment) => total + investment.totalPrice,
       0,
     );
+    const totalProjectedROI = activeInvestments.reduce(
+      (total, investment) =>
+        total + investment.totalPrice * investment.ROI / 100,
+      0,
+    );
 
     return res.json({
       success: true,
@@ -50,6 +55,7 @@ export const getUserDashboardOverview = async (req: Request, res: Response) => {
         }),
         totalInvestedAmount,
         totalActiveInvestments: activeInvestments.length,
+        totalProjectedROI,
       },
     });
   } catch (error: any) {
@@ -236,9 +242,15 @@ export const getUserInvestments = async (req: Request, res: Response) => {
       return total + investment.totalPrice;
     }, 0);
 
-    const totalActiveInvestments = userInvestments.filter(
+    const activeInvestments = userInvestments.filter(
       (investment) => investment.status === "ongoing",
-    ).length;
+    );
+    const totalActiveInvestments = activeInvestments.length;
+    const totalProjectedROI = activeInvestments.reduce(
+      (total, investment) =>
+        total + investment.totalPrice * investment.ROI / 100,
+      0,
+    );
 
     return res.status(200).json({
       success: true,
@@ -250,6 +262,7 @@ export const getUserInvestments = async (req: Request, res: Response) => {
         }),
         totalInvestedAmount,
         totalActiveInvestments,
+        totalProjectedROI,
       },
     });
   } catch (error: any) {
