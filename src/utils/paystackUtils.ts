@@ -85,6 +85,11 @@ export const realInitiateTransfer = async (data: {
   return res.data.data;
 };
 
+export const verifyTransfer = async (reference: string) => {
+  const res = await paystack.get(`/transfer/verify/${reference}`);
+  return res.data;
+};
+
 // utils/transfer.ts
 const mockInitiateTransfer = async (data: {
   amount: number;
@@ -101,7 +106,13 @@ const mockInitiateTransfer = async (data: {
   await new Promise((res) => setTimeout(res, 500));
 
   // Simulate occasional failure to test your rollback logic
-  if (Math.random() < 0.3) throw new Error("Mock transfer failure");
+  if (Math.random() < 0.3) {
+    const error = new Error("Mock transfer failure") as Error & {
+      definitive?: boolean;
+    };
+    error.definitive = true;
+    throw error;
+  }
 
   return { reference: data.reference };
 };

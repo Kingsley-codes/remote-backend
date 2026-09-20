@@ -26,6 +26,14 @@ const transactionSchema = new Schema(
     paymentID: {
       type: String,
     },
+    idempotencyKey: {
+      type: String,
+      unique: true,
+      sparse: true,
+    },
+    idempotencyRequestHash: {
+      type: String,
+    },
     userEmail: {
       type: String,
     },
@@ -44,6 +52,23 @@ const transactionSchema = new Schema(
     transactionRef: {
       type: String,
       index: true,
+    },
+    authorizationUrl: {
+      type: String,
+    },
+    accessCode: {
+      type: String,
+    },
+    initializationStatus: {
+      type: String,
+      enum: ["processing", "initialized", "failed"],
+    },
+    transferInitiationStatus: {
+      type: String,
+      enum: ["processing", "submitted", "uncertain", "rejected"],
+    },
+    transferRecipientCode: {
+      type: String,
     },
     paymentMethod: {
       type: String,

@@ -123,19 +123,33 @@ export const handleChargeFailed = async (eventData: PaystackEventData) => {
 
 export const handleTransferSuccess = async (data: any) => {
   const reference = data.reference;
+  const session = await Transaction.startSession();
+  let withdrawal: any = null;
 
-  const withdrawal = await Transaction.findOneAndUpdate(
-    { transactionRef: reference, status: "pending" },
-    { status: "completed" },
-    { new: true },
-  );
+  try {
+    await session.withTransaction(async () => {
+      withdrawal = await Transaction.findOneAndUpdate(
+        { transactionRef: reference, status: "pending" },
+        { status: "completed", transferInitiationStatus: "submitted" },
+        { new: true, session },
+      );
+
+      if (!withdrawal) return;
+
+      const walletUpdate = await Wallet.updateOne(
+        { user: withdrawal.user, lockedBalance: { $gte: withdrawal.amount } },
+        { $inc: { lockedBalance: -withdrawal.amount } },
+        { session },
+      );
+      if (walletUpdate.modifiedCount !== 1) {
+        throw new Error("Unable to settle withdrawal wallet balance");
+      }
+    });
+  } finally {
+    await session.endSession();
+  }
 
   if (!withdrawal) return;
-
-  await Wallet.updateOne(
-    { user: withdrawal.user },
-    { $inc: { lockedBalance: -withdrawal.amount } },
-  );
 
   const user = await User.findById(withdrawal.user)
     .select("firstName email")
@@ -147,22 +161,33 @@ export const handleTransferSuccess = async (data: any) => {
 
 export const handleTransferFailed = async (data: any) => {
   const reference = data.reference;
+  const session = await Transaction.startSession();
 
-  const withdrawal = await Transaction.findOneAndUpdate(
-    { transactionRef: reference, status: "pending" },
-    { status: "failed" },
-    { new: true },
-  );
+  try {
+    await session.withTransaction(async () => {
+      const withdrawal = await Transaction.findOneAndUpdate(
+        { transactionRef: reference, status: "pending" },
+        { status: "failed", transferInitiationStatus: "rejected" },
+        { new: true, session },
+      );
 
-  if (!withdrawal) return;
+      if (!withdrawal) return;
 
-  await Wallet.updateOne(
-    { user: withdrawal.user },
-    {
-      $inc: {
-        lockedBalance: -withdrawal.amount,
-        balance: withdrawal.amount,
-      },
-    },
-  );
+      const walletUpdate = await Wallet.updateOne(
+        { user: withdrawal.user, lockedBalance: { $gte: withdrawal.amount } },
+        {
+          $inc: {
+            lockedBalance: -withdrawal.amount,
+            balance: withdrawal.amount,
+          },
+        },
+        { session },
+      );
+      if (walletUpdate.modifiedCount !== 1) {
+        throw new Error("Unable to release failed withdrawal balance");
+      }
+    });
+  } finally {
+    await session.endSession();
+  }
 };

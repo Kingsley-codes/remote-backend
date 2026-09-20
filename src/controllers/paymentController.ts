@@ -55,6 +55,8 @@ const handleWalletPayment = async (
   units: number,
   duration: number,
   ROI: number,
+  idempotencyKey: string,
+  idempotencyRequestHash: string,
 ) => {
   const session = await mongoose.startSession();
 
@@ -88,6 +90,8 @@ const handleWalletPayment = async (
       amount: amount,
       paymentMethod: "wallet",
       status: "completed",
+      idempotencyKey,
+      idempotencyRequestHash,
     });
 
     await newPayment.save({ session });
@@ -130,8 +134,89 @@ const handleWalletPayment = async (
   }
 };
 
+const IDEMPOTENCY_KEY_PATTERN = /^[A-Za-z0-9._:-]{16,128}$/;
+
+const paymentRequestHash = (input: {
+  userId: string;
+  produceId: string;
+  amount: number;
+  units: number;
+  paymentMethod: string;
+}) =>
+  crypto
+    .createHash("sha256")
+    .update(JSON.stringify(input))
+    .digest("hex");
+
+const sendExistingInitialization = async (
+  res: Response,
+  payment: InstanceType<typeof Transaction>,
+  requestHash: string,
+) => {
+  if (payment.idempotencyRequestHash !== requestHash) {
+    return res.status(409).json({
+      success: false,
+      message: "This idempotency key was already used for a different payment",
+    });
+  }
+
+  if (payment.paymentMethod === "wallet") {
+    const investment = await Investment.findOne({ payment: payment._id });
+    if (!investment) {
+      return res.status(409).json({
+        success: false,
+        message: "Payment is still being processed",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Payment already completed using wallet",
+      data: { paymentID: payment.paymentID, newInvestment: investment },
+    });
+  }
+
+  if (
+    payment.initializationStatus === "initialized" &&
+    payment.authorizationUrl &&
+    payment.accessCode
+  ) {
+    return res.status(200).json({
+      success: true,
+      message: "Transaction already initialized",
+      data: {
+        authorization_url: payment.authorizationUrl,
+        access_code: payment.accessCode,
+        reference: payment.transactionRef,
+        paymentID: payment.paymentID,
+      },
+    });
+  }
+
+  if (payment.initializationStatus === "failed") {
+    return res.status(502).json({
+      success: false,
+      message: "Payment provider initialization previously failed",
+      retryableWithNewKey: true,
+    });
+  }
+
+  return res.status(409).json({
+    success: false,
+    message: "Payment initialization is still being processed",
+  });
+};
+
 export const initializePayment = async (req: Request, res: Response) => {
   try {
+    const idempotencyKey = req.get("Idempotency-Key")?.trim();
+    if (!idempotencyKey || !IDEMPOTENCY_KEY_PATTERN.test(idempotencyKey)) {
+      return res.status(400).json({
+        success: false,
+        message: "A valid Idempotency-Key header is required",
+      });
+    }
+
     const {
       lastName,
       firstName,
@@ -199,6 +284,18 @@ export const initializePayment = async (req: Request, res: Response) => {
     const finalUserIdString = user._id.toString();
     const { email, firstName: userFirstName, lastName: userLastName } = user;
 
+    const requestHash = paymentRequestHash({
+      userId: finalUserIdString,
+      produceId,
+      amount: numericAmount,
+      units: numericUnits,
+      paymentMethod,
+    });
+    const existingPayment = await Transaction.findOne({ idempotencyKey });
+    if (existingPayment) {
+      return sendExistingInitialization(res, existingPayment, requestHash);
+    }
+
     const produce = await Produce.findById(produceId);
 
     if (!produce) {
@@ -236,6 +333,8 @@ export const initializePayment = async (req: Request, res: Response) => {
           numericUnits,
           produce.duration,
           produce.ROI,
+          idempotencyKey,
+          requestHash,
         );
         void sendInvestmentPaymentEmail(
           email,
@@ -253,6 +352,12 @@ export const initializePayment = async (req: Request, res: Response) => {
           },
         });
       } catch (error: any) {
+        if (error?.code === 11000) {
+          const existing = await Transaction.findOne({ idempotencyKey });
+          if (existing) {
+            return sendExistingInitialization(res, existing, requestHash);
+          }
+        }
         const insufficientBalance = error?.message === "INSUFFICIENT_WALLET_BALANCE";
         return res.status(insufficientBalance ? 409 : 500).json({
           success: false,
@@ -268,11 +373,38 @@ export const initializePayment = async (req: Request, res: Response) => {
       const amountKobo = Math.round(numericAmount * 100);
 
       const paymentID = generatePaymentID();
+      const reference = generateReference();
+
+      let payment;
+      try {
+        payment = await Transaction.create({
+          user: finalUserId,
+          transactionType: "investment-payment",
+          transactionID: paymentID,
+          paymentID,
+          userEmail: email,
+          produce: produceId,
+          amount: numericAmount,
+          paymentMethod,
+          transactionRef: reference,
+          idempotencyKey,
+          idempotencyRequestHash: requestHash,
+          initializationStatus: "processing",
+        });
+      } catch (error: any) {
+        if (error?.code === 11000) {
+          const existing = await Transaction.findOne({ idempotencyKey });
+          if (existing) {
+            return sendExistingInitialization(res, existing, requestHash);
+          }
+        }
+        throw error;
+      }
 
       const transactionData = {
         email: email,
         amount: amountKobo,
-        reference: generateReference(),
+        reference,
         metadata: {
           user_id: finalUserId,
           user_name: userName,
@@ -310,25 +442,22 @@ export const initializePayment = async (req: Request, res: Response) => {
         await initializePaystackTransaction(transactionData);
 
       if (!paystackResponse.status || !("data" in paystackResponse)) {
-        return res.status(400).json({
+        payment.initializationStatus = "failed";
+        await payment.save();
+        return res.status(502).json({
           success: false,
           message: "Failed to initialize transaction",
           error: paystackResponse.message,
           reference: transactionData.reference,
+          retryableWithNewKey: true,
         });
       }
 
-      const payment = await Transaction.create({
-        user: finalUserId,
-        transactionType: "investment-payment",
-        transactionID: paymentID,
-        paymentID: paymentID,
-        userEmail: email,
-        produce: produceId,
-        amount: numericAmount,
-        paymentMethod: paymentMethod,
-        transactionRef: paystackResponse.data.reference,
-      });
+      payment.transactionRef = paystackResponse.data.reference;
+      payment.authorizationUrl = paystackResponse.data.authorization_url;
+      payment.accessCode = paystackResponse.data.access_code;
+      payment.initializationStatus = "initialized";
+      await payment.save();
 
       // Return success response
       return res.status(200).json({

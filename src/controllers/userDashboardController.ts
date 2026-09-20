@@ -2,17 +2,25 @@ import { buildWalletFilter } from "../utils/walletFilters.js";
 import { fulfillmentStages, normalizeStage } from "../utils/productionStages.js";
 import { Request, Response } from "express";
 import Investment from "../models/investmentModel.js";
-import { createRecipient, initiateTransfer } from "../utils/paystackUtils.js";
+import {
+  createRecipient,
+  initiateTransfer,
+  verifyTransfer,
+} from "../utils/paystackUtils.js";
 import BankAccount from "../models/bankAccountModel.js";
 import User from "../models/userModel.js";
 import bcrypt from "bcrypt";
 import mongoose from "mongoose";
 import Wallet from "../models/walletModel.js";
-import { generateReference } from "../helpers/paymentHelper.js";
+import {
+  generateReference,
+  handleTransferFailed,
+} from "../helpers/paymentHelper.js";
 import axios from "axios";
 import Transaction from "../models/transactionModel.js";
 import { consumeEmailOtp, issueEmailOtp } from "../services/otpService.js";
 import { sendOtpEmail } from "../services/emailService.js";
+import crypto from "crypto";
 
 export const getUserDashboardOverview = async (req: Request, res: Response) => {
   try {
@@ -537,150 +545,272 @@ export const getBanks = async (req: Request, res: Response) => {
   }
 };
 
+const WITHDRAWAL_IDEMPOTENCY_KEY_PATTERN = /^[A-Za-z0-9._:-]{16,128}$/;
+
+const isDefinitiveTransferRejection = (error: any) => {
+  if (error?.definitive === true) return true;
+  if (!axios.isAxiosError(error) || !error.response) return false;
+
+  const status = error.response.status;
+  const message = String(error.response.data?.message ?? "");
+  if (/reference.*(already|exists)|already.*reference/i.test(message)) {
+    return false;
+  }
+
+  return status >= 400 && status < 500 && ![408, 409, 429].includes(status);
+};
+
+const matchesWithdrawalRequest = (
+  withdrawal: InstanceType<typeof Transaction>,
+  userId: string,
+  amount: number,
+) =>
+  withdrawal.transactionType === "withdrawal" &&
+  withdrawal.user.toString() === userId &&
+  withdrawal.amount === amount;
+
+const sendWithdrawalResponse = async (
+  res: Response,
+  withdrawal: InstanceType<typeof Transaction>,
+) => {
+  let currentWithdrawal = withdrawal;
+
+  if (
+    currentWithdrawal.status === "pending" &&
+    currentWithdrawal.transferInitiationStatus === "uncertain" &&
+    process.env.NODE_ENV !== "development"
+  ) {
+    try {
+      const verification = await verifyTransfer(
+        currentWithdrawal.transactionRef!,
+      );
+      const providerStatus = String(
+        verification?.data?.status ?? "",
+      ).toLowerCase();
+
+      if (["failed", "reversed"].includes(providerStatus)) {
+        await handleTransferFailed({
+          reference: currentWithdrawal.transactionRef,
+        });
+      } else if (providerStatus) {
+        await Transaction.updateOne(
+          { _id: currentWithdrawal._id, status: "pending" },
+          { transferInitiationStatus: "submitted" },
+        );
+      }
+
+      const refreshed = await Transaction.findById(currentWithdrawal._id);
+      if (refreshed) currentWithdrawal = refreshed;
+    } catch {
+      // Keep funds locked until Paystack can be verified or sends a webhook.
+    }
+  }
+
+  if (currentWithdrawal.status === "failed") {
+    return res.status(409).json({
+      success: false,
+      message: "Withdrawal was rejected and the funds were returned",
+      retryableWithNewKey: true,
+      data: {
+        amount: currentWithdrawal.amount,
+        reference: currentWithdrawal.transactionRef,
+        status: currentWithdrawal.status,
+      },
+    });
+  }
+
+  if (currentWithdrawal.status === "completed") {
+    return res.status(200).json({
+      success: true,
+      message: "Withdrawal completed",
+      data: {
+        amount: currentWithdrawal.amount,
+        reference: currentWithdrawal.transactionRef,
+        status: currentWithdrawal.status,
+      },
+    });
+  }
+
+  return res.status(202).json({
+    success: true,
+    message:
+      currentWithdrawal.transferInitiationStatus === "uncertain"
+        ? "Withdrawal submitted; confirmation is still pending"
+        : "Withdrawal is being processed",
+    data: {
+      amount: currentWithdrawal.amount,
+      reference: currentWithdrawal.transactionRef,
+      status: currentWithdrawal.status,
+      initiationStatus: currentWithdrawal.transferInitiationStatus,
+    },
+  });
+};
+
 export const withdrawBalance = async (req: Request, res: Response) => {
   const session = await mongoose.startSession();
-
-  let withdrawalId: string | null = null;
-  let bankRecipientCode: string = "";
-  let amount: number;
-
   const withdrawalReference = generateReference();
 
   try {
     const userId = req.user;
-
     if (!userId) {
-      return res.status(401).json({
-        success: false,
-        message: "Unauthorized",
-      });
+      return res.status(401).json({ success: false, message: "Unauthorized" });
     }
 
-    const { amount: reqAmount, password } = req.body;
-    amount = reqAmount;
-
-    if (amount < 500) {
+    const idempotencyKey = req.get("Idempotency-Key")?.trim();
+    if (
+      !idempotencyKey ||
+      !WITHDRAWAL_IDEMPOTENCY_KEY_PATTERN.test(idempotencyKey)
+    ) {
       return res.status(400).json({
         success: false,
-        message: "Minimum withdrawal is ₦500",
+        message: "A valid Idempotency-Key header is required",
       });
     }
 
-    // STEP 1: DB TRANSACTION ONLY
-    await session.withTransaction(async () => {
-      // 1. Validate password
-      const user = await User.findById(userId)
-        .select("+password")
-        .session(session);
-
-      if (!user || !user.password) {
-        throw new Error("User not found");
-      }
-
-      const isPasswordValid = await bcrypt.compare(password, user.password);
-
-      if (!isPasswordValid) {
-        throw new Error("Invalid credentials");
-      }
-
-      // 2. Get bank account
-      const bankDetails = await BankAccount.findOne({ user: userId }).session(
-        session,
-      );
-
-      if (!bankDetails) {
-        throw new Error("No bank account found");
-      }
-
-      bankRecipientCode = bankDetails.recipientCode;
-
-      // 3. Atomic wallet update
-      const wallet = await Wallet.findOneAndUpdate(
-        {
-          user: userId,
-          balance: { $gte: amount },
-        },
-        {
-          $inc: {
-            balance: -amount,
-            lockedBalance: amount,
-          },
-        },
-        { new: true, session },
-      );
-
-      if (!wallet) {
-        throw new Error("Insufficient balance or concurrent withdrawal");
-      }
-
-      // 4. Create withdrawal (PENDING)
-      const withdrawal = new Transaction({
-        user: userId,
-        transactionType: "withdrawal",
-        transactionID: withdrawalReference,
-        amount,
-        status: "pending",
-        transactionRef: withdrawalReference,
+    const { amount: requestedAmount, password } = req.body;
+    const amount = Number(requestedAmount);
+    if (!Number.isSafeInteger(amount) || amount < 500) {
+      return res.status(400).json({
+        success: false,
+        message: "Withdrawal must be a whole amount of at least ₦500",
       });
+    }
 
-      await withdrawal.save({ session });
+    const existingWithdrawal = await Transaction.findOne({ idempotencyKey });
+    if (existingWithdrawal) {
+      if (
+        !matchesWithdrawalRequest(
+          existingWithdrawal,
+          userId.toString(),
+          amount,
+        )
+      ) {
+        return res.status(409).json({
+          success: false,
+          message: "This idempotency key was already used for another request",
+        });
+      }
+      return sendWithdrawalResponse(res, existingWithdrawal);
+    }
 
-      withdrawalId = withdrawal._id.toString();
-    });
+    let withdrawalId: string | null = null;
+    let bankRecipientCode = "";
 
-    // STEP 2: CALL PAYSTACK (OUTSIDE TXN)
+    try {
+      await session.withTransaction(async () => {
+        const user = await User.findById(userId)
+          .select("+password")
+          .session(session);
+        if (!user || !user.password) throw new Error("User not found");
+        if (!(await bcrypt.compare(password, user.password))) {
+          throw new Error("Invalid credentials");
+        }
+
+        const bankDetails = await BankAccount.findOne({ user: userId }).session(
+          session,
+        );
+        if (!bankDetails) throw new Error("No bank account found");
+        bankRecipientCode = bankDetails.recipientCode;
+
+        const wallet = await Wallet.findOneAndUpdate(
+          { user: userId, balance: { $gte: amount } },
+          { $inc: { balance: -amount, lockedBalance: amount } },
+          { new: true, session },
+        );
+        if (!wallet) {
+          throw new Error("Insufficient balance or concurrent withdrawal");
+        }
+
+        const requestHash = crypto
+          .createHash("sha256")
+          .update(`${userId.toString()}:${amount}`)
+          .digest("hex");
+        const withdrawal = new Transaction({
+          user: userId,
+          transactionType: "withdrawal",
+          transactionID: withdrawalReference,
+          amount,
+          status: "pending",
+          transactionRef: withdrawalReference,
+          idempotencyKey,
+          idempotencyRequestHash: requestHash,
+          transferInitiationStatus: "processing",
+          transferRecipientCode: bankRecipientCode,
+        });
+        await withdrawal.save({ session });
+        withdrawalId = withdrawal._id.toString();
+      });
+    } catch (error: any) {
+      if (error?.code === 11000) {
+        const existing = await Transaction.findOne({ idempotencyKey });
+        if (existing) {
+          if (
+            !matchesWithdrawalRequest(existing, userId.toString(), amount)
+          ) {
+            return res.status(409).json({
+              success: false,
+              message:
+                "This idempotency key was already used for another request",
+            });
+          }
+          return sendWithdrawalResponse(res, existing);
+        }
+      }
+      throw error;
+    }
+
     try {
       const transfer = await initiateTransfer({
         amount,
         recipient: bankRecipientCode,
         reference: withdrawalReference,
       });
-
-      // Save reference (DO NOT mark success yet)
-      await Transaction.updateOne(
-        { _id: withdrawalId },
-        { transactionRef: transfer.reference },
-      );
-
-      return res.json({
-        success: true,
-        message: "Withdrawal initiated successfully",
-        data: {
-          amount: amount,
-          recipient: bankRecipientCode,
-          reference: withdrawalReference,
-        },
-      });
-    } catch (err: any) {
-      if (err.response) {
-        console.log("Paystack Error:", err.response.data);
-      } else {
-        console.log(err);
-      }
-      // STEP 3: PAYSTACK FAILED → ROLLBACK
-      await Wallet.updateOne(
-        { user: userId },
+      const updatedWithdrawal = await Transaction.findOneAndUpdate(
+        { _id: withdrawalId, status: "pending" },
         {
-          $inc: {
-            lockedBalance: -amount,
-            balance: amount,
-          },
+          transactionRef: transfer.reference,
+          transferInitiationStatus: "submitted",
         },
+        { new: true },
       );
+      if (updatedWithdrawal) {
+        return sendWithdrawalResponse(res, updatedWithdrawal);
+      }
+      const settledWithdrawal = await Transaction.findById(withdrawalId);
+      if (settledWithdrawal) {
+        return sendWithdrawalResponse(res, settledWithdrawal);
+      }
+      throw new Error("Withdrawal record not found");
+    } catch (error: any) {
+      if (isDefinitiveTransferRejection(error)) {
+        await handleTransferFailed({ reference: withdrawalReference });
+        const failedWithdrawal = await Transaction.findById(withdrawalId);
+        if (failedWithdrawal) {
+          return sendWithdrawalResponse(res, failedWithdrawal);
+        }
+      }
 
-      await Transaction.updateOne({ _id: withdrawalId }, { status: "failed" });
-
-      return res.status(500).json({
-        success: false,
-        message: "Transfer initiation failed",
-      });
+      const uncertainWithdrawal = await Transaction.findOneAndUpdate(
+        { _id: withdrawalId, status: "pending" },
+        { transferInitiationStatus: "uncertain" },
+        { new: true },
+      );
+      if (uncertainWithdrawal) {
+        return sendWithdrawalResponse(res, uncertainWithdrawal);
+      }
+      const settledWithdrawal = await Transaction.findById(withdrawalId);
+      if (settledWithdrawal) {
+        return sendWithdrawalResponse(res, settledWithdrawal);
+      }
+      throw error;
     }
   } catch (error: any) {
+    console.error("Withdrawal error:", error.message);
     return res.status(400).json({
       success: false,
       message: "Unable to process withdrawal",
     });
   } finally {
-    session.endSession();
+    await session.endSession();
   }
 };
