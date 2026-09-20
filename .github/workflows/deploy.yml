@@ -1,0 +1,54 @@
+name: Deploy Backend to Namecheap
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+          run_install: false
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build backend
+        run: pnpm run build
+
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.NAMECHEAP_SSH_KEY }}" > ~/.ssh/namecheap_deploy
+          chmod 600 ~/.ssh/namecheap_deploy
+          ssh-keyscan -p "${{ secrets.NAMECHEAP_PORT }}" "${{ secrets.NAMECHEAP_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Deploy dist and Passenger bridge
+        run: |
+          scp -P "${{ secrets.NAMECHEAP_PORT }}" \
+            -i ~/.ssh/namecheap_deploy \
+            -r dist \
+            passenger.cjs \
+            "${{ secrets.NAMECHEAP_USER }}@${{ secrets.NAMECHEAP_HOST }}:/home/remobmwu/remote-backend-repo/"
+
+      - name: Restart application
+        run: |
+          ssh -p "${{ secrets.NAMECHEAP_PORT }}" \
+            -i ~/.ssh/namecheap_deploy \
+            "${{ secrets.NAMECHEAP_USER }}@${{ secrets.NAMECHEAP_HOST }}" \
+            'cloudlinux-selector restart --interpreter nodejs --user remobmwu --app-root remote-backend-repo --json'
