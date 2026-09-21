@@ -38,17 +38,18 @@ jobs:
           chmod 600 ~/.ssh/namecheap_deploy
           ssh-keyscan -p "${{ secrets.NAMECHEAP_PORT }}" "${{ secrets.NAMECHEAP_HOST }}" >> ~/.ssh/known_hosts
 
-      - name: Deploy dist and Passenger bridge
+      - name: Deploy application files
         run: |
           scp -P "${{ secrets.NAMECHEAP_PORT }}" \
             -i ~/.ssh/namecheap_deploy \
             -r dist \
             passenger.cjs \
+            package.json \
             "${{ secrets.NAMECHEAP_USER }}@${{ secrets.NAMECHEAP_HOST }}:/home/remobmwu/remote-backend-repo/"
 
-      - name: Restart application
+      - name: Install production dependencies and restart application
         run: |
           ssh -p "${{ secrets.NAMECHEAP_PORT }}" \
             -i ~/.ssh/namecheap_deploy \
             "${{ secrets.NAMECHEAP_USER }}@${{ secrets.NAMECHEAP_HOST }}" \
-            'cloudlinux-selector restart --interpreter nodejs --user remobmwu --app-root remote-backend-repo --json'
+            'cloudlinux-selector install-modules --interpreter nodejs --user remobmwu --app-root remote-backend-repo --skip-web-check --json && cloudlinux-selector restart --interpreter nodejs --user remobmwu --app-root remote-backend-repo --json'
