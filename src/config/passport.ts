@@ -67,7 +67,6 @@ passport.use(
 
         const payload: UserJwtPayload = {
           id: user._id.toString(),
-          role: "user",
           email: user.email,
           name: `${user.firstName} ${user.lastName}`.trim(),
           avatar: user.profilePhoto?.url,
@@ -127,7 +126,6 @@ passport.use(
 
         const payload: AdminJwtPayload = {
           id: admin._id.toString(),
-          role: admin.role, // preserves "admin" or "super-admin" from the DB
           email: admin.email,
           name: `${admin.firstName} ${admin.lastName}`.trim(),
           avatar: admin.profilePhoto?.url,

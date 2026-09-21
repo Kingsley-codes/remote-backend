@@ -7,6 +7,7 @@ import {
 import {
   uploadPostMedia,
   handleUploadErrors,
+  cleanupUploadedFiles,
 } from "../middleware/uploadMiddleware.js";
 import {
   listPublishedPosts,
@@ -36,9 +37,10 @@ agriLearnRouter.get("/:slug", getPublishedPost);
 export const adminAgriLearnRouter = Router();
 adminAgriLearnRouter.use(adminAuthenticate);
 adminAgriLearnRouter.get("/", listAdminPosts);
-adminAgriLearnRouter.post("/", uploadPostMedia, handleUploadErrors, createPost);
+adminAgriLearnRouter.post("/", cleanupUploadedFiles, uploadPostMedia, handleUploadErrors, createPost);
 adminAgriLearnRouter.patch(
   "/:postId",
+  cleanupUploadedFiles,
   uploadPostMedia,
   handleUploadErrors,
   updatePost,

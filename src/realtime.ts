@@ -1,11 +1,11 @@
 import { Server } from "socket.io";
 import type { Server as HttpServer } from "node:http";
-import jwt from "jsonwebtoken";
 import User from "./models/userModel.js";
 import Admin from "./models/adminModel.js";
 import Ticket from "./models/ticketModel.js";
 import Produce from "./models/produceModel.js";
 import Investment from "./models/investmentModel.js";
+import { verifyIdentityToken } from "./services/tokenService.js";
 
 let io: Server | undefined;
 const cookieValue = (header: string | undefined, name: string) =>
@@ -22,10 +22,13 @@ export function initializeRealtime(server: HttpServer, origins: string[]) {
         socket.data.identity = null;
         return next();
       }
-      const decoded = jwt.verify(decodeURIComponent(token), process.env.JWT_SECRET!) as { id: string };
-      const owner = adminToken ? await Admin.exists({ _id: decoded.id }) : await User.exists({ _id: decoded.id });
+      const type = adminToken ? "admin" : "user";
+      const decoded = verifyIdentityToken(decodeURIComponent(token), type);
+      const owner = adminToken
+        ? await Admin.findOne({ _id: decoded.id, status: "active", sessionVersion: decoded.sv }).select("_id")
+        : await User.findOne({ _id: decoded.id, status: "active", sessionVersion: decoded.sv }).select("_id");
       if (!owner) return next(new Error("Unauthorized"));
-      socket.data.identity = { id: decoded.id, type: adminToken ? "admin" : "user" };
+      socket.data.identity = { id: decoded.id, type };
       next();
     } catch {
       // General is public, so an expired cookie becomes an anonymous socket.

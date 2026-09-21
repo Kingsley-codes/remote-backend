@@ -7,6 +7,9 @@ import User from "../models/userModel.js";
 import Wallet from "../models/walletModel.js";
 import { awardReferralCommission } from "../services/referralService.js";
 import Transaction from "../models/transactionModel.js";
+import mongoose from "mongoose";
+import { writeAuditLog } from "../services/auditService.js";
+import { logInfo } from "../utils/logger.js";
 import {
   sendInvestmentPaymentEmail,
   sendWithdrawalCompletedEmail,
@@ -24,100 +27,110 @@ export const generateReference = (prefix = "ps") => {
   return `${prefix}_${unique}`;
 };
 
-export const handleChargeSuccess = async (eventData: PaystackEventData) => {
-  let payment = null;
+export const handleChargeSuccess = async (
+  eventData: PaystackEventData,
+): Promise<{
+  payment: InstanceType<typeof Transaction> | null;
+  investment: InstanceType<typeof Investment> | null;
+  newlySettled: boolean;
+}> => {
+  const session = await mongoose.startSession();
+  let payment: InstanceType<typeof Transaction> | null = null;
+  let investment: InstanceType<typeof Investment> | null = null;
+  let emailTitle = "";
+  let newlySettled = false;
 
   try {
-    payment = await Transaction.findOne({
-      transactionRef: eventData.reference,
-    });
+    await session.withTransaction(async () => {
+      payment = await Transaction.findOne({
+        transactionRef: eventData.reference,
+        transactionType: "investment-payment",
+      }).session(session);
+      if (!payment) throw new Error("Payment record not found");
 
-    if (!payment) {
-      console.log(
-        "Payent not found for this transaction reference:",
-        eventData.reference,
+      const expectedAmount = Math.round(payment.amount * 100);
+      if (eventData.amount !== expectedAmount || eventData.currency?.toUpperCase() !== "NGN") {
+        throw new Error("Payment provider amount or currency mismatch");
+      }
+
+      investment = await Investment.findOne({ payment: payment._id }).session(session);
+      if (payment.status === "completed") {
+        if (!investment) throw new Error("Completed payment is missing its investment");
+        return;
+      }
+
+      const units = payment.units ?? Number(eventData.metadata?.units);
+      if (!Number.isSafeInteger(units) || units <= 0) throw new Error("Invalid settled unit count");
+
+      const produce = await Produce.findOneAndUpdate(
+        { _id: payment.produce, remainingUnit: { $gte: units } },
+        { $inc: { remainingUnit: -units } },
+        { new: true, session },
       );
-      throw new Error("Payent not found");
-    }
+      if (!produce) throw new Error("Insufficient units to settle this paid transaction");
 
-    if (payment.status === "completed") return payment;
+      const created = await Investment.create([{
+        user: payment.user,
+        payment: payment._id,
+        produce: payment.produce,
+        orderID: generateOrderID(),
+        units,
+        title: produce.title,
+        totalPrice: payment.amount,
+        customerEmail: payment.userEmail,
+        orderStatus: "confirmed",
+        transactionRef: payment.transactionRef,
+        duration: produce.duration,
+        ROI: produce.ROI,
+        stage: normalizeStage(produce.stage, produce.category),
+      }], { session });
+      investment = created[0]!;
 
-    payment.date = new Date(eventData.paid_at);
-    payment.status = "completed";
-    await payment.save();
+      await awardReferralCommission(payment.user.toString(), investment._id.toString(), session);
+      await User.findByIdAndUpdate(payment.user, { hasActiveInvestment: true }, { session });
 
-    const produce = await Produce.findById(payment.produce);
-
-    if (!produce) {
-      throw new Error("Associated produce not found");
-    }
-
-    const newInvestment = await Investment.create({
-      user: payment.user,
-      payment: payment._id,
-      produce: payment.produce,
-      orderID: generateOrderID(),
-      units: eventData.metadata.units,
-      title: eventData.metadata.produce_title,
-      totalPrice: payment.amount,
-      customerEmail: payment.userEmail,
-      orderStatus: "confirmed",
-      transactionRef: payment.transactionRef,
-      duration: produce.duration,
-      ROI: produce.ROI,
-      stage: normalizeStage(produce.stage, produce.category),
+      payment.status = "completed";
+      payment.date = eventData.paid_at ? new Date(eventData.paid_at) : new Date();
+      await payment.save({ session });
+      await writeAuditLog({
+        action: "PAYMENT_SETTLED",
+        entityType: "PAYMENT",
+        entityId: payment.id,
+        actorType: "SYSTEM",
+        actorId: "paystack",
+        actorName: "Paystack",
+        details: `Payment ${payment.transactionRef} settled`,
+        session,
+      });
+      emailTitle = produce.title;
+      newlySettled = true;
     });
-    await awardReferralCommission(
-      payment.user.toString(),
-      newInvestment._id.toString(),
-    );
-
-    const hasActiveInvestment = await Investment.exists({
-      user: payment.user,
-      orderStatus: "confirmed",
-      status: "ongoing",
-    });
-
-    await User.findByIdAndUpdate(payment.user, {
-      hasActiveInvestment: Boolean(hasActiveInvestment),
-    });
-
-    produce.remainingUnit -= eventData.metadata.units;
-    await produce.save();
-
-    await User.findByIdAndUpdate(payment.user, {
-      $set: { "active-investment": true },
-    });
-
-    const investor = await User.findById(payment.user)
-      .select("firstName email")
-      .lean();
-    if (investor?.email) {
-      void sendInvestmentPaymentEmail(
-        investor.email,
-        investor.firstName,
-        produce.title,
-        payment.amount,
-      );
-    }
-  } catch (error: any) {
-    console.error("Error updating successful payment:", error.message);
+  } finally {
+    await session.endSession();
   }
 
-  return payment;
+  if (newlySettled && payment) {
+    const settled = payment as InstanceType<typeof Transaction>;
+    const investor = await User.findById(settled.user).select("firstName email").lean();
+    if (investor?.email) {
+      void sendInvestmentPaymentEmail(investor.email, investor.firstName, emailTitle, settled.amount);
+    }
+  }
+  return { payment, investment, newlySettled };
 };
 
 export const handleChargeFailed = async (eventData: PaystackEventData) => {
-  console.log("Charge failed or was abandoned for ref:", eventData.reference);
+  logInfo("payment.charge_failed", { reference: eventData.reference });
 
   const payment = await Transaction.findOne({
     transactionRef: eventData.reference,
+    transactionType: "investment-payment",
   });
 
   if (payment && payment.status === "pending") {
     payment.status = "failed";
     await payment.save();
-    console.log(`Payment ${eventData.reference} marked Failed.`);
+    logInfo("payment.marked_failed", { reference: eventData.reference });
   }
 };
 
@@ -129,7 +142,7 @@ export const handleTransferSuccess = async (data: any) => {
   try {
     await session.withTransaction(async () => {
       withdrawal = await Transaction.findOneAndUpdate(
-        { transactionRef: reference, status: "pending" },
+        { transactionRef: reference, transactionType: "withdrawal", status: "pending" },
         { status: "completed", transferInitiationStatus: "submitted" },
         { new: true, session },
       );
@@ -166,7 +179,7 @@ export const handleTransferFailed = async (data: any) => {
   try {
     await session.withTransaction(async () => {
       const withdrawal = await Transaction.findOneAndUpdate(
-        { transactionRef: reference, status: "pending" },
+        { transactionRef: reference, transactionType: "withdrawal", status: "pending" },
         { status: "failed", transferInitiationStatus: "rejected" },
         { new: true, session },
       );

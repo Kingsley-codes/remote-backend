@@ -4,6 +4,7 @@ import Ticket from "../models/ticketModel.js";
 import { uploadToCloudinary } from "../middleware/uploadMiddleware.js";
 import { emitTicketUpdate } from "../realtime.js";
 import { sendPush } from "../services/pushService.js";
+import { logError } from "../utils/logger.js";
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -28,14 +29,14 @@ function files(req: Request) {
 async function attachments(req: Request) {
   return Promise.all(
     files(req).map(async (file) => {
-      const result = await uploadToCloudinary(file.buffer, "remote-agric/tickets");
+      const result = await uploadToCloudinary(file, "remote-agric/tickets");
       return { url: result.secure_url, publicId: result.public_id };
     }),
   );
 }
 
 function fail(res: Response, error: unknown) {
-  console.error("Ticket error:", error);
+  logError("ticket.request_failed", error);
   return res.status(500).json({ status: "error", message: "Unable to process ticket request" });
 }
 
@@ -57,7 +58,7 @@ export const createTicket = async (req: Request, res: Response) => {
       body: ticket.subject,
       url: `/admin/dashboard/support/${ticket.id}`,
       tag: `ticket-${ticket.id}`,
-    }).catch(console.error);
+    }).catch((error) => logError("push.admin_notification_failed", error));
     return res.status(201).json({ status: "success", data: { ticket } });
   } catch (error) { return fail(res, error); }
 };
@@ -96,7 +97,7 @@ export const addUserMessage = async (req: Request, res: Response) => {
       body: req.body.message?.trim() || "A customer sent an image",
       url: `/admin/dashboard/support/${ticket.id}`,
       tag: `ticket-${ticket.id}`,
-    }).catch(console.error);
+    }).catch((error) => logError("push.admin_notification_failed", error));
     return res.status(201).json({ status: "success", data: { ticket } });
   } catch (error) { return fail(res, error); }
 };
@@ -137,7 +138,7 @@ export const addAdminMessage = async (req: Request, res: Response) => {
       body: req.body.message?.trim() || "Support sent an image",
       url: `/dashboard/support/${ticket.id}`,
       tag: `ticket-${ticket.id}`,
-    }).catch(console.error);
+    }).catch((error) => logError("push.user_notification_failed", error));
     return res.status(201).json({ status: "success", data: { ticket } });
   } catch (error) { return fail(res, error); }
 };
@@ -166,7 +167,7 @@ export const updateTicketStatus = async (req: Request, res: Response) => {
       body: status === "resolved" ? "Your support request has been marked resolved." : "Your support request has been reopened.",
       url: `/dashboard/support/${ticket.id}`,
       tag: `ticket-${ticket.id}`,
-    }).catch(console.error);
+    }).catch((error) => logError("push.user_notification_failed", error));
     return res.json({ status: "success", data: { ticket } });
   } catch (error) { return fail(res, error); }
 };

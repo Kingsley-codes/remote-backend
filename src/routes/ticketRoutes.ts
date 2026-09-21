@@ -6,6 +6,7 @@ import {
 import {
   uploadTicketImages,
   handleUploadErrors,
+  cleanupUploadedFiles,
 } from "../middleware/uploadMiddleware.js";
 import {
   createTicket,
@@ -23,6 +24,7 @@ userTicketRouter.use(userAuthenticate);
 userTicketRouter.get("/", getUserTickets);
 userTicketRouter.post(
   "/",
+  cleanupUploadedFiles,
   uploadTicketImages,
   handleUploadErrors,
   createTicket,
@@ -30,6 +32,7 @@ userTicketRouter.post(
 userTicketRouter.get("/:ticketId", getUserTicket);
 userTicketRouter.post(
   "/:ticketId/messages",
+  cleanupUploadedFiles,
   uploadTicketImages,
   handleUploadErrors,
   addUserMessage,
@@ -41,6 +44,7 @@ adminTicketRouter.get("/", getAdminTickets);
 adminTicketRouter.get("/:ticketId", getAdminTicket);
 adminTicketRouter.post(
   "/:ticketId/messages",
+  cleanupUploadedFiles,
   uploadTicketImages,
   handleUploadErrors,
   addAdminMessage,

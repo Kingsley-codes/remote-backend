@@ -9,6 +9,7 @@ import {
   requestPasswordReset,
   resetPassword,
 } from "../controllers/authControllers.js";
+import { userAuthenticate } from "../middleware/authenticationMiddleware.js";
 
 const userAuthRouter = express.Router();
 
@@ -19,7 +20,7 @@ userAuthRouter.post("/reset-password", resetPassword);
 
 userAuthRouter.post("/login", login); // User Login route
 
-userAuthRouter.post("/logout", logout); // User Logout route
+userAuthRouter.post("/logout", userAuthenticate, logout); // User Logout route
 
 // Google OAuth
 userAuthRouter.get("/google", handleGoogleLogin);

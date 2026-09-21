@@ -12,7 +12,10 @@ export const subscribeToPush = (ownerType: "user" | "admin") => async (req: Requ
   return res.status(201).json({ status: "success" });
 };
 
-export const unsubscribeFromPush = async (req: Request, res: Response) => {
-  await PushSubscription.deleteOne({ endpoint: req.body.endpoint });
+export const unsubscribeFromPush = (ownerType: "user" | "admin") => async (req: Request, res: Response) => {
+  const owner = ownerType === "admin" ? req.admin : req.user;
+  const endpoint = typeof req.body.endpoint === "string" ? req.body.endpoint : "";
+  if (!endpoint) return res.status(400).json({ status: "fail", message: "Endpoint is required" });
+  await PushSubscription.deleteOne({ endpoint, ownerType, owner });
   return res.json({ status: "success" });
 };

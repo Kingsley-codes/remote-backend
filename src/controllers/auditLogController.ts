@@ -1,6 +1,21 @@
 // controllers/auditLogController.ts
 import { Request, Response } from "express";
 import AuditLog from "../models/auditLogModel.js";
+import { logError } from "../utils/logger.js";
+
+const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const searchFilter = (value: string | undefined) => {
+  const search = value?.trim().slice(0, 100);
+  if (!search) return undefined;
+  const safe = escapeRegex(search);
+  return [
+    { userName: { $regex: safe, $options: "i" } },
+    { userEmail: { $regex: safe, $options: "i" } },
+    { entityId: { $regex: safe, $options: "i" } },
+    { details: { $regex: safe, $options: "i" } },
+  ];
+};
 
 interface AuditLogQuery {
   page?: string;
@@ -66,14 +81,8 @@ export const getAuditLogs = async (
       filter.userId = userId;
     }
 
-    if (search) {
-      filter.$or = [
-        { userName: { $regex: search, $options: "i" } },
-        { userEmail: { $regex: search, $options: "i" } },
-        { entityId: { $regex: search, $options: "i" } },
-        { details: { $regex: search, $options: "i" } },
-      ];
-    }
+    const searchClauses = searchFilter(search);
+    if (searchClauses) filter.$or = searchClauses;
 
     const [logs, totalCount] = await Promise.all([
       AuditLog.find(filter)
@@ -94,11 +103,10 @@ export const getAuditLogs = async (
       },
     });
   } catch (error: any) {
-    console.error("Error fetching audit logs:", error);
+    logError("audit.list_failed", error);
     return res.status(500).json({
       success: false,
-      message: "Server error",
-      error: error.message,
+      message: "Unable to load audit logs",
     });
   }
 };
@@ -162,11 +170,10 @@ export const getAuditLogStats = async (req: Request, res: Response) => {
       },
     });
   } catch (error: any) {
-    console.error("Error fetching audit log stats:", error);
+    logError("audit.stats_failed", error);
     return res.status(500).json({
       success: false,
-      message: "Server error",
-      error: error.message,
+      message: "Unable to load audit statistics",
     });
   }
 };
@@ -199,15 +206,10 @@ export const exportAuditLogs = async (
     if (entityType) filter.entityType = entityType;
     if (userId) filter.userId = userId;
 
-    if (search) {
-      filter.$or = [
-        { userName: { $regex: search, $options: "i" } },
-        { userEmail: { $regex: search, $options: "i" } },
-        { entityId: { $regex: search, $options: "i" } },
-      ];
-    }
+    const searchClauses = searchFilter(search);
+    if (searchClauses) filter.$or = searchClauses;
 
-    const logs = await AuditLog.find(filter).sort({ timestamp: -1 }).lean();
+    const logs = await AuditLog.find(filter).sort({ timestamp: -1 }).limit(10_000).lean();
 
     // Convert to CSV
     const csvHeaders = [
@@ -219,7 +221,7 @@ export const exportAuditLogs = async (
       "User ID",
       "User Name",
       "User Email",
-      "User Role",
+      "Actor Type",
       "Changes",
       "IP Address",
       "User Agent",
@@ -235,7 +237,7 @@ export const exportAuditLogs = async (
       log.userId,
       log.userName,
       log.userEmail,
-      log.userRole,
+      log.actorType,
       JSON.stringify(log.changes),
       log.ipAddress || "",
       log.userAgent || "",
@@ -247,7 +249,8 @@ export const exportAuditLogs = async (
       ...csvRows.map((row) =>
         row
           .map((cell) => {
-            const stringCell = String(cell);
+            let stringCell = String(cell);
+            if (/^[=+\-@]/.test(stringCell)) stringCell = `'${stringCell}`;
             // Escape quotes and wrap in quotes if contains comma or newline
             if (
               stringCell.includes(",") ||
@@ -271,11 +274,10 @@ export const exportAuditLogs = async (
     // Add return here
     return res.send(csv);
   } catch (error: any) {
-    console.error("Error exporting audit logs:", error);
+    logError("audit.export_failed", error);
     return res.status(500).json({
       success: false,
-      message: "Server error",
-      error: error.message,
+      message: "Unable to export audit logs",
     });
   }
 };

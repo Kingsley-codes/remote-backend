@@ -17,6 +17,12 @@ import Wallet from "../models/walletModel.js";
 import mongoose from "mongoose";
 import { generateReference } from "../helpers/paymentHelper.js";
 import { sendAccountStatusEmail } from "../services/emailService.js";
+import { logError } from "../utils/logger.js";
+
+const safeSearchPattern = (value: unknown) =>
+  typeof value === "string"
+    ? value.trim().slice(0, 100).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+    : "";
 
 type UserQuery = {
   status?: "active" | "suspended" | "pending";
@@ -120,7 +126,8 @@ export const getDashboardOverview = async (req: Request, res: Response) => {
       },
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    logError("admin.dashboard_overview_failed", error);
+    res.status(500).json({ success: false, message: "Unable to load dashboard overview" });
   }
 };
 
@@ -177,7 +184,7 @@ export const getDashboardStats = async (req: Request, res: Response) => {
   } catch (error: any) {
     return res.status(500).json({
       success: false,
-      message: error.message ?? "Unable to load dashboard statistics",
+      message: "Unable to load dashboard statistics",
     });
   }
 };
@@ -210,10 +217,11 @@ export const getAllUsers = async (
     }
 
     if (q) {
+      const safeQuery = safeSearchPattern(q);
       filter.$or = [
-        { firstName: { $regex: q, $options: "i" } },
-        { lastName: { $regex: q, $options: "i" } },
-        { email: { $regex: q, $options: "i" } },
+        { firstName: { $regex: safeQuery, $options: "i" } },
+        { lastName: { $regex: safeQuery, $options: "i" } },
+        { email: { $regex: safeQuery, $options: "i" } },
       ];
     }
 
@@ -262,11 +270,10 @@ export const getAllUsers = async (
       pages: Math.ceil(total / limit),
     });
   } catch (error: any) {
-    console.error("Error fetching users:", error);
+    logError("admin.users_list_failed", error);
     return res.status(500).json({
       success: false,
       message: "Server error",
-      error: error.message,
     });
   }
 };
@@ -309,10 +316,9 @@ export const suspendUser = async (
       message: "User suspended successfully",
     });
   } catch (error: any) {
-    console.error("Error suspending user:", error);
+    logError("admin.user_suspend_failed", error);
     return res.status(500).json({
       message: "Server error",
-      error: error.message,
     });
   }
 };
@@ -351,10 +357,9 @@ export const activateUser = async (
       message: "User activated successfully",
     });
   } catch (error: any) {
-    console.error("Error activating user:", error);
+    logError("admin.user_activate_failed", error);
     return res.status(500).json({
       message: "Server error",
-      error: error.message,
     });
   }
 };
@@ -448,7 +453,7 @@ export const getInvestmentStats = async (req: Request, res: Response) => {
       },
     });
   } catch (error: any) {
-    console.error("Stats error:", error);
+    logError("admin.investment_stats_failed", error);
 
     return res.status(500).json({
       success: false,
@@ -610,7 +615,7 @@ export const getInvestments = async (req: Request, res: Response) => {
       },
     });
   } catch (error) {
-    console.error("Investment fetch error:", error);
+    logError("admin.investments_list_failed", error);
 
     return res.status(500).json({
       success: false,
@@ -660,10 +665,10 @@ export const markPhysicalProduceDelivered = async (
       data: { investment },
     });
   } catch (error: any) {
-    console.error("Delivery update error:", error);
+    logError("admin.delivery_update_failed", error);
     return res.status(500).json({
       success: false,
-      message: error.message ?? "Unable to mark delivery",
+      message: "Unable to mark delivery",
     });
   }
 };
@@ -757,10 +762,10 @@ export const approveCashHarvestReturn = async (req: Request, res: Response) => {
       data: { investment: updatedInvestment },
     });
   } catch (error: any) {
-    console.error("Cash harvest approval error:", error);
+    logError("admin.cash_return_approval_failed", error);
     return res.status(400).json({
       success: false,
-      message: error.message ?? "Unable to approve cash return",
+      message: "Unable to approve cash return",
     });
   } finally {
     session.endSession();
@@ -827,7 +832,7 @@ export const getAllPayments = async (req: Request, res: Response) => {
     }
 
     // Search users
-    const searchTerm = asString(q);
+    const searchTerm = safeSearchPattern(asString(q));
 
     if (searchTerm) {
       const matchingUsers = await User.find({
@@ -864,7 +869,7 @@ export const getAllPayments = async (req: Request, res: Response) => {
       },
     });
   } catch (error: any) {
-    console.error("Payment fetch error:", error);
+    logError("admin.payments_list_failed", error);
 
     return res.status(500).json({
       success: false,
@@ -910,7 +915,7 @@ export const getAllWithdrawals = async (req: Request, res: Response) => {
     }
 
     if (q) {
-      const searchTerm = asString(q);
+      const searchTerm = safeSearchPattern(asString(q));
       if (searchTerm) {
         filter.$or = [
           { firstName: { $regex: searchTerm, $options: "i" } },
@@ -939,7 +944,7 @@ export const getAllWithdrawals = async (req: Request, res: Response) => {
       },
     });
   } catch (error: any) {
-    console.error("Payment fetch error:", error);
+    logError("admin.withdrawals_list_failed", error);
 
     return res.status(500).json({
       success: false,
@@ -961,11 +966,10 @@ export const getAllFarmers = async (req: Request, res: Response) => {
       farmers,
     });
   } catch (error: any) {
-    console.error("Error fetching farmers:", error);
+    logError("admin.farmers_list_failed", error);
     return res.status(500).json({
       success: false,
       message: "Server error",
-      error: error.message,
     });
   }
 };
@@ -987,11 +991,10 @@ export const fetchSingleFarmer = async (
       farmer,
     });
   } catch (error: any) {
-    console.error("Error fetching farmer:", error);
+    logError("admin.farmer_fetch_failed", error);
     return res.status(500).json({
       success: false,
       message: "Server error",
-      error: error.message,
     });
   }
 };
@@ -1036,7 +1039,7 @@ export const createFarmer = async (req: Request, res: Response) => {
     const profilePhoto = file.profilePhoto[0]!;
 
     const profilePhotoResult = await uploadToCloudinary(
-      profilePhoto.buffer,
+      profilePhoto,
       "AgroFund Hub/farmer_images",
     );
 
@@ -1061,11 +1064,10 @@ export const createFarmer = async (req: Request, res: Response) => {
       farmer: newFarmer,
     });
   } catch (error: any) {
-    console.error("Error creating farmer:", error);
+    logError("admin.farmer_create_failed", error);
     return res.status(500).json({
       success: false,
       message: "Server error",
-      error: error.message,
     });
   }
 };
@@ -1106,7 +1108,7 @@ export const updateFarmer = async (
       }
 
       const profilePhotoResult = await uploadToCloudinary(
-        file.buffer,
+        file,
         "AgroFund Hub/farmer_images",
       );
 
@@ -1121,11 +1123,10 @@ export const updateFarmer = async (
       farmer: updatedFarmer,
     });
   } catch (error: any) {
-    console.error("Error updating farmer:", error);
+    logError("admin.farmer_update_failed", error);
     return res.status(500).json({
       success: false,
       message: "Server error",
-      error: error.message,
     });
   }
 };
@@ -1151,11 +1152,10 @@ export const deleteFarmer = async (
       message: "Producer deleted successfully",
     });
   } catch (error: any) {
-    console.error("Error deleting farmer:", error);
+    logError("admin.farmer_delete_failed", error);
     return res.status(500).json({
       success: false,
       message: "Server error",
-      error: error.message,
     });
   }
 };
@@ -1185,11 +1185,10 @@ export const updateFundingStatus = async (
       farmer: updatedFarmer,
     });
   } catch (error: any) {
-    console.error("Error updating funding status:", error);
+    logError("admin.farmer_funding_update_failed", error);
     return res.status(500).json({
       success: false,
       message: "Server error",
-      error: error.message,
     });
   }
 };
@@ -1218,11 +1217,10 @@ export const markYieldReceived = async (
       farmer: updatedFarmer,
     });
   } catch (error: any) {
-    console.error("Error marking yield as received:", error);
+    logError("admin.farmer_yield_update_failed", error);
     return res.status(500).json({
       success: false,
       message: "Server error",
-      error: error.message,
     });
   }
 };

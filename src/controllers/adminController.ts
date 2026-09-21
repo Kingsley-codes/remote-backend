@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import Admin from "../models/adminModel.js";
+import { logError } from "../utils/logger.js";
 
 export const fetchAdminProfile = async (req: Request, res: Response) => {
   try {
@@ -25,7 +26,7 @@ export const fetchAdminProfile = async (req: Request, res: Response) => {
       data: admin,
     });
   } catch (error) {
-    console.error("Error fetching admin profile:", error);
+    logError("admin.profile_fetch_failed", error, { adminId: req.admin?.toString() });
     return res.status(500).json({
       success: false,
       message: "Server error",

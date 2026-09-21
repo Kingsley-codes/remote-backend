@@ -47,6 +47,7 @@ const userSchema = new Schema(
     password: {
       type: String,
       minlength: 8,
+      select: false,
     },
     hasActiveInvestment: {
       type: Boolean,
@@ -66,6 +67,7 @@ const userSchema = new Schema(
       type: Boolean,
       default: false,
     },
+    sessionVersion: { type: Number, default: 0 },
     suspendReason: {
       type: String,
     },

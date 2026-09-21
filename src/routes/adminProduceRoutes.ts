@@ -12,6 +12,7 @@ import {
 import { adminAuthenticate } from "../middleware/authenticationMiddleware.js";
 import {
   handleUploadErrors,
+  cleanupUploadedFiles,
   uploadProduceImages,
 } from "../middleware/uploadMiddleware.js";
 
@@ -24,6 +25,7 @@ adminProduceRouter.delete("/:produceId", adminAuthenticate, deleteProduce);
 adminProduceRouter.patch(
   "/",
   adminAuthenticate,
+  cleanupUploadedFiles,
   uploadProduceImages,
   handleUploadErrors,
   editProduce,
@@ -45,6 +47,7 @@ adminProduceRouter.post(
 adminProduceRouter.post(
   "/",
   adminAuthenticate,
+  cleanupUploadedFiles,
   uploadProduceImages,
   handleUploadErrors,
   createProduce,

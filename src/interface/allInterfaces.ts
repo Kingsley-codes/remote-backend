@@ -100,6 +100,9 @@ export interface PaystackVerifyResponse {
 export interface PaystackEventData {
   reference: string;
   paid_at: string; // ISO date string
+  amount: number;
+  currency: string;
+  status?: string;
   metadata: {
     units: number;
     produce_title: string;

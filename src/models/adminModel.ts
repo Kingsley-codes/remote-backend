@@ -48,6 +48,7 @@ const adminSchema = new Schema(
     password: {
       type: String,
       minlength: 8,
+      select: false,
     },
     profilePhoto: {
       publicId: { type: String },
@@ -62,10 +63,7 @@ const adminSchema = new Schema(
       type: Boolean,
       default: false,
     },
-    role: {
-      type: String,
-      enum: ["super-admin", "admin"],
-    },
+    sessionVersion: { type: Number, default: 0 },
     suspendReason: {
       type: String,
     },

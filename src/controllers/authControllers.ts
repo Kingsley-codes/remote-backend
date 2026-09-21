@@ -1,7 +1,6 @@
 import { NextFunction, Request, Response } from "express";
 import bcrypt from "bcrypt";
 import User from "../models/userModel.js";
-import jwt, { SignOptions } from "jsonwebtoken";
 import validator from "validator";
 import {
   LoginRequestBody,
@@ -12,19 +11,10 @@ import { UserJwtPayload } from "../config/passport.js"; // import the interface
 import Referral from "../models/referralModel.js";
 import { consumeEmailOtp, issueEmailOtp } from "../services/otpService.js";
 import { sendOtpEmail } from "../services/emailService.js";
-
-// Helper function to sign JWT tokens for User
-const signToken = (id: string): string => {
-  const secret = process.env.JWT_SECRET;
-  const expiresIn = process.env.JWT_EXPIRES_IN;
-
-  if (!secret) throw new Error("JWT_SECRET is not defined");
-  if (!expiresIn) throw new Error("JWT_EXPIRES_IN is not defined");
-
-  return jwt.sign({ id, type: "user" }, secret, {
-    expiresIn: expiresIn as NonNullable<SignOptions["expiresIn"]>,
-  });
-};
+import { authCookieOptions, signIdentityToken } from "../services/tokenService.js";
+import { consumeOAuthState, issueOAuthState } from "../services/oauthStateService.js";
+import { writeActorAudit } from "../services/auditService.js";
+import { logError } from "../utils/logger.js";
 
 // Helper function to generate unique donor IDs
 export const generateUSerID = () =>
@@ -116,7 +106,7 @@ export const registerUser = async (
       requiresVerification: true,
     });
   } catch (err: any) {
-    console.error("Error registering user:", err);
+    logError("auth.registration_failed", err);
     return res.status(500).json({
       status: "error",
       message: "Registration failed",
@@ -137,7 +127,7 @@ export const verifySignupOtp = async (req: Request, res: Response) => {
     if (referrer) await Referral.create({ referrer: referrer._id, referredUser: newUser._id, referralCode: referrer.farmerID });
     return res.status(201).json({ status: "success", message: "Email verified and account created" });
   } catch (err: any) {
-    console.error("Signup verification error:", err);
+    logError("auth.signup_verification_failed", err);
     return res.status(500).json({ status: "error", message: "Unable to verify email" });
   }
 };
@@ -153,7 +143,7 @@ export const requestPasswordReset = async (req: Request, res: Response) => {
     }
     return res.status(200).json({ status: "success", message: "If an account exists, a reset code has been sent" });
   } catch (err) {
-    console.error("Password reset request error:", err);
+    logError("auth.password_reset_request_failed", err);
     return res.status(503).json({ status: "error", message: "Unable to send reset code" });
   }
 };
@@ -168,10 +158,12 @@ export const resetPassword = async (req: Request, res: Response) => {
     const valid = await consumeEmailOtp({ email, userId: user._id.toString(), purpose: "password-reset", code: otp });
     if (!valid) return res.status(400).json({ status: "fail", message: "Invalid or expired reset code" });
     user.password = await bcrypt.hash(password, 12);
+    user.sessionVersion = (user.sessionVersion ?? 0) + 1;
     await user.save();
+    await writeActorAudit(req, { action: "UPDATE", entityType: "USER", entityId: user.id, details: "Password reset; existing sessions revoked" });
     return res.status(200).json({ status: "success", message: "Password reset successfully" });
   } catch (err) {
-    console.error("Password reset error:", err);
+    logError("auth.password_reset_failed", err);
     return res.status(500).json({ status: "error", message: "Unable to reset password" });
   }
 };
@@ -191,7 +183,7 @@ export const login = async (
       });
     }
 
-    const user = await User.findOne({ email }).select("+password");
+    const user = await User.findOne({ email: email.trim().toLowerCase(), status: "active" }).select("+password");
 
     // Check if user exists and has a password
     if (!user || !user.password) {
@@ -225,24 +217,18 @@ export const login = async (
     //   });
     // }
 
-    const token = signToken(user._id.toString());
+    const token = signIdentityToken(user._id.toString(), "user", user.sessionVersion ?? 0);
     user.password = null;
 
-    const isSecure = process.env.NODE_ENV === "production";
-
-    res.cookie("user_token", token, {
-      httpOnly: true,
-      secure: isSecure,
-      sameSite: isSecure ? "none" : "lax",
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-    });
+    res.cookie("user_token", token, authCookieOptions());
+    await writeActorAudit(req, { action: "LOGIN", entityType: "USER", entityId: user.id, details: "Password login" });
 
     return res.status(200).json({
       status: "success",
       data: { user },
     });
   } catch (err: any) {
-    console.error("Login error:", err);
+    logError("auth.user_login_failed", err);
 
     return res.status(500).json({
       status: "error",
@@ -251,13 +237,12 @@ export const login = async (
   }
 };
 
-export const logout = (req: Request, res: Response) => {
-  const isSecure = process.env.NODE_ENV === "production";
-  res.clearCookie("user_token", {
-    httpOnly: true,
-    secure: isSecure,
-    sameSite: isSecure ? "none" : "lax",
-  });
+export const logout = async (req: Request, res: Response) => {
+  if (req.user) {
+    await User.updateOne({ _id: req.user }, { $inc: { sessionVersion: 1 } });
+    await writeActorAudit(req, { action: "LOGOUT", entityType: "USER", entityId: req.user.toString(), details: "All user sessions revoked" });
+  }
+  res.clearCookie("user_token", authCookieOptions());
 
   res.status(200).json({
     status: "success",
@@ -270,9 +255,11 @@ export const handleGoogleLogin = (
   res: Response,
   next: NextFunction,
 ) => {
+  const state = issueOAuthState(res, "oauth_user_state");
   passport.authenticate("google-user", {
     scope: ["profile", "email"],
     session: false,
+    state,
   })(req, res, next);
 };
 
@@ -281,6 +268,9 @@ export const googleAuthCallback = (
   res: Response,
   next: NextFunction,
 ) => {
+  if (!consumeOAuthState(req, res, "oauth_user_state")) {
+    return res.redirect(`${process.env.FRONTEND_URL}/login?error=invalid_oauth_state`);
+  }
   passport.authenticate(
     "google-user",
     { session: false },
@@ -291,16 +281,17 @@ export const googleAuthCallback = (
           `${process.env.FRONTEND_URL}/login?error=oauth_failed`,
         );
 
-      const token = signToken(user.id);
-      const isSecure = process.env.NODE_ENV === "production";
-
-      res.cookie("user_token", token, {
-        httpOnly: true,
-        secure: isSecure,
-        sameSite: isSecure ? "none" : "lax",
-        maxAge: 7 * 24 * 60 * 60 * 1000,
+      void User.findById(user.id).select("sessionVersion").then(async (record) => {
+        if (!record) return res.redirect(`${process.env.FRONTEND_URL}/login?error=oauth_failed`);
+        const token = signIdentityToken(user.id, "user", record.sessionVersion ?? 0);
+        res.cookie("user_token", token, authCookieOptions());
+        req.user = record._id;
+        await writeActorAudit(req, { action: "LOGIN", entityType: "USER", entityId: user.id, details: "Google OAuth login" });
+        res.redirect(`${process.env.FRONTEND_URL}/dashboard`);
+      }).catch((error) => {
+        logError("auth.oauth_user_callback_failed", error);
+        next(error);
       });
-      res.redirect(`${process.env.FRONTEND_URL}/dashboard`);
     },
   )(req, res, next);
 };

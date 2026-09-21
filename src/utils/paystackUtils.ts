@@ -1,4 +1,5 @@
 import axios from "axios";
+import { logError, logInfo } from "./logger.js";
 import {
   PaystackInitializeResponse,
   PaystackInitializeTransactionPayload,
@@ -35,10 +36,7 @@ export const initializePaystackTransaction = async (
       data: response.data.data,
     };
   } catch (error: any) {
-    console.error(
-      "Paystack initialize transaction error:",
-      error.response?.data || error.message,
-    );
+    logError("paystack.initialize_failed", error, { status: error.response?.status });
 
     // Return consistent error format
     return {
@@ -96,11 +94,7 @@ const mockInitiateTransfer = async (data: {
   recipient: string;
   reference: string;
 }) => {
-  console.log("[MOCK] Transfer initiated:", {
-    amount: data.amount,
-    recipient: data.recipient,
-    reference: data.reference,
-  });
+  logInfo("paystack.mock_transfer_started", { amount: data.amount, reference: data.reference });
 
   // Simulate network delay
   await new Promise((res) => setTimeout(res, 500));

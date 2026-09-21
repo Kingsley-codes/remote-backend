@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import Produce from "../models/produceModel.js";
+import { logError } from "../utils/logger.js";
 
 export const getAllProduce = async (req: Request, res: Response) => {
   try {
@@ -32,7 +33,7 @@ export const getAllProduce = async (req: Request, res: Response) => {
       produce: produceWithPercentage,
     });
   } catch (error: any) {
-    console.error("Error fetching produce:", error);
+    logError("produce.list_failed", error);
     return res.status(500).json({
       success: false,
       message: "Server error",
@@ -57,7 +58,7 @@ export const fetchSingleProduce = async (
       produce: produceItem,
     });
   } catch (error: any) {
-    console.error("Error fetching single produce item:", error);
+    logError("produce.fetch_failed", error, { produceId: req.params.produceId });
     return res.status(500).json({
       message: "Server error",
     });

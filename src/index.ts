@@ -6,6 +6,7 @@ import { closeExpiredResolvedTickets } from "./controllers/ticketController.js";
 import { deleteExpiredNotifications } from "./controllers/notificationController.js";
 import { createServer } from "node:http";
 import { initializeRealtime } from "./realtime.js";
+import { logError, logInfo } from "./utils/logger.js";
 
 const dev = process.env.NODE_ENV !== "production";
 
@@ -19,13 +20,13 @@ if (!MONGO_URI) {
 // Connect to MongoDB Atlas
 try {
   await mongoose.connect(MONGO_URI);
-  console.log("MongoDB Connected Successfully");
+  logInfo("mongodb.connected");
   await closeExpiredResolvedTickets();
   await deleteExpiredNotifications();
   setInterval(() => void closeExpiredResolvedTickets(), 60 * 60 * 1000).unref();
   setInterval(() => void deleteExpiredNotifications(), 60 * 60 * 60 * 1000).unref();
 } catch (error) {
-  console.error("MongoDB Connection Error:", error);
+  logError("mongodb.connection_failed", error);
   process.exit(1);
 }
 
@@ -37,11 +38,11 @@ app.get("/api", (req: Request, res: Response) => {
 const httpServer = createServer(app);
 initializeRealtime(httpServer, allowedOrigins);
 httpServer.listen(PORT, () => {
-  console.log(`Server running at http://localhost:${PORT}`);
+  logInfo("server.started", { port: Number(PORT) });
 });
 
 app.use((err: any, req: any, res: any, next: any) => {
-  console.error("Unhandled request error", { method: req.method, path: req.originalUrl, error: err?.message });
+  logError("http.unhandled_error", err, { method: req.method, path: req.originalUrl });
   res.status(500).json({
     status: "error",
     message: "Internal Server Error",

@@ -5,9 +5,9 @@ import { subscribeToPush, unsubscribeFromPush } from "../controllers/pushControl
 export const userPushRouter = Router();
 userPushRouter.use(userAuthenticate);
 userPushRouter.post("/subscribe", subscribeToPush("user"));
-userPushRouter.post("/unsubscribe", unsubscribeFromPush);
+userPushRouter.post("/unsubscribe", unsubscribeFromPush("user"));
 
 export const adminPushRouter = Router();
 adminPushRouter.use(adminAuthenticate);
 adminPushRouter.post("/subscribe", subscribeToPush("admin"));
-adminPushRouter.post("/unsubscribe", unsubscribeFromPush);
+adminPushRouter.post("/unsubscribe", unsubscribeFromPush("admin"));

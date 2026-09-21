@@ -1,5 +1,6 @@
 import { stagesByCategory, normalizeStage, type FarmCategory } from "../utils/productionStages.js";
 import { Request, Response } from "express";
+import { logError } from "../utils/logger.js";
 import Produce from "../models/produceModel.js";
 import {
   uploadToCloudinary,
@@ -68,17 +69,17 @@ export const createProduce = async (
     }
 
     const uploadResult1 = await uploadToCloudinary(
-      req.files.image1[0].buffer,
+      req.files.image1[0],
       "AgroFund Hub/produce_images",
     );
 
     const uploadResult2 = await uploadToCloudinary(
-      req.files.image2[0].buffer,
+      req.files.image2[0],
       "AgroFund Hub/produce_images",
     );
 
     const uploadResult3 = await uploadToCloudinary(
-      req.files.image3[0].buffer,
+      req.files.image3[0],
       "AgroFund Hub/produce_images",
     );
 
@@ -115,11 +116,10 @@ export const createProduce = async (
       produce: newProduce,
     });
   } catch (error: any) {
-    console.error("Error creating produce:", error);
+    logError("admin.produce_create_failed", error);
     return res.status(500).json({
       status: "error",
       message: "Server error",
-      error: error.message,
     });
   }
 };
@@ -173,11 +173,10 @@ export const deleteProduce = async (
       deletedProduce,
     });
   } catch (error: any) {
-    console.error("Error deleting produce:", error);
+    logError("admin.produce_delete_failed", error);
     return res.status(500).json({
       status: "error",
       message: "Server error",
-      error: error.message,
     });
   }
 };
@@ -256,7 +255,7 @@ export const editProduce = async (
       }
 
       const uploadResult1 = await uploadToCloudinary(
-        image1file.buffer,
+        image1file,
         "AgroFund Hub/produce_images",
       );
       updatedProduce.image1 = {
@@ -271,7 +270,7 @@ export const editProduce = async (
       }
 
       const uploadResult2 = await uploadToCloudinary(
-        image2file.buffer,
+        image2file,
         "AgroFund Hub/produce_images",
       );
       updatedProduce.image2 = {
@@ -286,7 +285,7 @@ export const editProduce = async (
       }
 
       const uploadResult3 = await uploadToCloudinary(
-        image3file.buffer,
+        image3file,
         "AgroFund Hub/produce_images",
       );
       updatedProduce.image3 = {
@@ -303,11 +302,10 @@ export const editProduce = async (
       produce: updatedProduce,
     });
   } catch (error: any) {
-    console.error("Error editing produce:", error);
+    logError("admin.produce_update_failed", error);
     return res.status(500).json({
       status: "error",
       message: "Server error",
-      error: error.message,
     });
   }
 };
@@ -331,11 +329,10 @@ export const getAllProduce = async (req: Request, res: Response) => {
       produce: produceList.map((produce) => ({ ...produce.toObject(), stage: normalizeStage(produce.stage, produce.category) })),
     });
   } catch (error: any) {
-    console.error("Error fetching produce:", error);
+    logError("admin.produce_list_failed", error);
     return res.status(500).json({
       status: "error",
       message: "Server error",
-      error: error.message,
     });
   }
 };
@@ -376,11 +373,10 @@ export const suspendProduce = async (
       message: "Produce suspended successfully",
     });
   } catch (error: any) {
-    console.error("Error suspending produce:", error);
+    logError("admin.produce_suspend_failed", error);
     return res.status(500).json({
       status: "error",
       message: "Server error",
-      error: error.message,
     });
   }
 };
@@ -420,11 +416,10 @@ export const activateProduce = async (
       message: "Produce activated successfully",
     });
   } catch (error: any) {
-    console.error("Error activating produce:", error);
+    logError("admin.produce_activate_failed", error);
     return res.status(500).json({
       status: "error",
       message: "Server error",
-      error: error.message,
     });
   }
 };
@@ -495,12 +490,11 @@ export const updateProduceStage = async (req: Request, res: Response) => {
       },
     });
   } catch (error: any) {
-    console.error("Error updating produce stage:", error);
+    logError("admin.produce_stage_update_failed", error);
 
     return res.status(500).json({
       success: false,
       message: "Server error",
-      error: error.message,
     });
   }
 };

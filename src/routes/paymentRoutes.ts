@@ -9,7 +9,7 @@ import { optionalUserAuthenticate } from "../middleware/authenticationMiddleware
 const paymentRouter = express.Router();
 
 paymentRouter.post("/paystack/payment", optionalUserAuthenticate, initializePayment);
-paymentRouter.get("/paystack/verify/:reference", optionalUserAuthenticate, verifyPayment);
+paymentRouter.post("/paystack/verify/:reference", optionalUserAuthenticate, verifyPayment);
 paymentRouter.post("/paystack/webhook", handleWebhook);
 
 export default paymentRouter;

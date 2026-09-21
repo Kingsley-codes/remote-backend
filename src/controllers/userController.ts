@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import User from "../models/userModel.js";
 import Wallet from "../models/walletModel.js";
+import { logError } from "../utils/logger.js";
 
 export const fetchUserProfile = async (req: Request, res: Response) => {
   try {
@@ -11,8 +12,6 @@ export const fetchUserProfile = async (req: Request, res: Response) => {
         message: "Unauthorized",
       });
     }
-    console.log("fetching profile");
-
     const user = await User.findById(userId).select("-password");
 
     if (!user) {
@@ -32,7 +31,7 @@ export const fetchUserProfile = async (req: Request, res: Response) => {
       },
     });
   } catch (error) {
-    console.error("Error fetching user profile:", error);
+    logError("user.profile_fetch_failed", error, { userId: req.user?.toString() });
     return res.status(500).json({
       success: false,
       message: "Server error",
@@ -58,7 +57,7 @@ export const updateUserProfile = async (req: Request, res: Response) => {
     if (!user) return res.status(404).json({ success: false, message: "User not found" });
     return res.json({ success: true, data: { user } });
   } catch (error) {
-    console.error("Error updating user profile:", error);
+    logError("user.profile_update_failed", error, { userId: req.user?.toString() });
     return res.status(500).json({ success: false, message: "Unable to update profile" });
   }
 };

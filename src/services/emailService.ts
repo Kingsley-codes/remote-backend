@@ -1,4 +1,5 @@
 import { google } from "googleapis";
+import { logError } from "../utils/logger.js";
 
 type EmailInput = { to: string; subject: string; html: string; text: string };
 type OtpEmailPurpose = "signup" | "password-reset" | "bank-account";
@@ -54,7 +55,7 @@ export async function deliverEmail(input: EmailInput) {
   try {
     await sendEmail(input);
   } catch (error) {
-    console.error(`Email delivery failed (${input.subject})`, error);
+    logError("email.delivery_failed", error, { subject: input.subject });
   }
 }
 

@@ -41,6 +41,10 @@ const transactionSchema = new Schema(
       type: Number,
       required: true,
     },
+    units: {
+      type: Number,
+      min: 1,
+    },
     currency: {
       type: String,
       default: "NGN",

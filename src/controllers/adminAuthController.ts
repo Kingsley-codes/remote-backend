@@ -1,24 +1,13 @@
 import { NextFunction, Request, Response } from "express";
 import bcrypt from "bcrypt";
-import jwt, { SignOptions } from "jsonwebtoken";
 import Admin from "../models/adminModel.js";
 import { LoginRequestBody } from "../interface/allInterfaces.js";
 import { AdminJwtPayload } from "../config/passport.js";
 import passport from "passport";
-
-// Helper function to sign JWT tokens for Admin
-
-const signToken = (id: string): string => {
-  const secret = process.env.JWT_SECRET;
-  const expiresIn = process.env.JWT_EXPIRES_IN;
-
-  if (!secret) throw new Error("JWT_SECRET is not defined");
-  if (!expiresIn) throw new Error("JWT_EXPIRES_IN is not defined");
-
-  return jwt.sign({ id, type: "admin" }, secret, {
-    expiresIn: expiresIn as NonNullable<SignOptions["expiresIn"]>,
-  });
-};
+import { authCookieOptions, signIdentityToken } from "../services/tokenService.js";
+import { consumeOAuthState, issueOAuthState } from "../services/oauthStateService.js";
+import { writeActorAudit } from "../services/auditService.js";
+import { logError } from "../utils/logger.js";
 
 // Admin Login
 export const adminLogin = async (
@@ -35,7 +24,7 @@ export const adminLogin = async (
       });
     }
 
-    const admin = await Admin.findOne({ email }).select("+password");
+    const admin = await Admin.findOne({ email: email.trim().toLowerCase(), status: "active" }).select("+password");
 
     // Check if admin exists and has a password
     if (!admin || !admin.password) {
@@ -62,24 +51,19 @@ export const adminLogin = async (
       });
     }
 
-    const token = signToken(admin._id.toString());
+    const token = signIdentityToken(admin._id.toString(), "admin", admin.sessionVersion ?? 0);
     admin.password = null;
 
-    const isSecure = process.env.NODE_ENV === "production";
-
-    res.cookie("admin_token", token, {
-      httpOnly: true,
-      secure: isSecure,
-      sameSite: isSecure ? "none" : "lax",
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-    });
+    res.cookie("admin_token", token, authCookieOptions());
+    req.admin = admin._id;
+    await writeActorAudit(req, { action: "LOGIN", entityType: "ADMIN", entityId: admin.id, details: "Password login" });
 
     return res.status(200).json({
       status: "success",
       data: { admin },
     });
   } catch (err: any) {
-    console.error("Login error:", err);
+    logError("auth.admin_login_failed", err);
 
     return res.status(500).json({
       status: "error",
@@ -93,9 +77,11 @@ export const handleGoogleLogin = (
   res: Response,
   next: NextFunction,
 ) => {
+  const state = issueOAuthState(res, "oauth_admin_state");
   passport.authenticate("google-admin", {
     scope: ["profile", "email"],
     session: false,
+    state,
   })(req, res, next);
 };
 
@@ -104,6 +90,9 @@ export const googleAuthCallback = (
   res: Response,
   next: NextFunction,
 ) => {
+  if (!consumeOAuthState(req, res, "oauth_admin_state")) {
+    return res.redirect(`${process.env.FRONTEND_URL}/admin/login?error=invalid_oauth_state`);
+  }
   passport.authenticate(
     "google-admin",
     { session: false },
@@ -111,32 +100,30 @@ export const googleAuthCallback = (
       if (err) return next(err);
       if (!user)
         return res.redirect(
-          `${process.env.FRONTEND_URL}/login?error=oauth_failed`,
+          `${process.env.FRONTEND_URL}/admin/login?error=oauth_failed`,
         );
 
-      const token = signToken(user.id);
-
-      const isSecure = process.env.NODE_ENV === "production";
-
-      res.cookie("admin_token", token, {
-        httpOnly: true,
-        secure: isSecure,
-        sameSite: isSecure ? "none" : "lax",
-        maxAge: 7 * 24 * 60 * 60 * 1000,
+      void Admin.findById(user.id).select("sessionVersion").then(async (record) => {
+        if (!record) return res.redirect(`${process.env.FRONTEND_URL}/admin/login?error=oauth_failed`);
+        const token = signIdentityToken(user.id, "admin", record.sessionVersion ?? 0);
+        res.cookie("admin_token", token, authCookieOptions());
+        req.admin = record._id;
+        await writeActorAudit(req, { action: "LOGIN", entityType: "ADMIN", entityId: user.id, details: "Google OAuth login" });
+        res.redirect(`${process.env.FRONTEND_URL}/admin/dashboard`);
+      }).catch((error) => {
+        logError("auth.oauth_admin_callback_failed", error);
+        next(error);
       });
-
-      res.redirect(`${process.env.FRONTEND_URL}/dashboard`);
     },
   )(req, res, next);
 };
 
-export const adminLogout = (req: Request, res: Response) => {
-  const isSecure = process.env.NODE_ENV === "production";
-  res.clearCookie("admin_token", {
-    httpOnly: true,
-    secure: isSecure,
-    sameSite: isSecure ? "none" : "lax",
-  });
+export const adminLogout = async (req: Request, res: Response) => {
+  if (req.admin) {
+    await Admin.updateOne({ _id: req.admin }, { $inc: { sessionVersion: 1 } });
+    await writeActorAudit(req, { action: "LOGOUT", entityType: "ADMIN", entityId: req.admin.toString(), details: "All admin sessions revoked" });
+  }
+  res.clearCookie("admin_token", authCookieOptions());
 
   res.status(200).json({
     status: "success",

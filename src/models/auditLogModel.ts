@@ -14,6 +14,7 @@ const auditLogSchema = new Schema(
         "YIELD_MARKED",
         "LOGIN",
         "LOGOUT",
+        "PAYMENT_SETTLED",
       ],
       required: true,
     },
@@ -27,6 +28,10 @@ const auditLogSchema = new Schema(
         "PAYMENT",
         "WITHDRAWAL",
         "ADMIN",
+        "TICKET",
+        "NOTIFICATION",
+        "POST",
+        "SYSTEM",
       ],
       required: true,
     },
@@ -34,9 +39,9 @@ const auditLogSchema = new Schema(
     userId: { type: String, required: true },
     userName: { type: String, required: true },
     userEmail: { type: String, required: true },
-    userRole: {
+    actorType: {
       type: String,
-      enum: ["ADMIN", "SUPER_ADMIN", "FARMER", "BUYER"],
+      enum: ["ADMIN", "USER", "SYSTEM"],
       required: true,
     },
     changes: {

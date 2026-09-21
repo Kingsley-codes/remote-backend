@@ -24,6 +24,7 @@ import { awardReferralCommission } from "../services/referralService.js";
 import Transaction from "../models/transactionModel.js";
 import { sendInvestmentPaymentEmail } from "../services/emailService.js";
 import validator from "validator";
+import { logError, logInfo } from "../utils/logger.js";
 
 const syncUserActiveInvestmentStatus = async (
   userId: string,
@@ -385,6 +386,7 @@ export const initializePayment = async (req: Request, res: Response) => {
           userEmail: email,
           produce: produceId,
           amount: numericAmount,
+          units: numericUnits,
           paymentMethod,
           transactionRef: reference,
           idempotencyKey,
@@ -447,7 +449,6 @@ export const initializePayment = async (req: Request, res: Response) => {
         return res.status(502).json({
           success: false,
           message: "Failed to initialize transaction",
-          error: paystackResponse.message,
           reference: transactionData.reference,
           retryableWithNewKey: true,
         });
@@ -472,7 +473,7 @@ export const initializePayment = async (req: Request, res: Response) => {
       });
     }
   } catch (error: any) {
-    console.log("Error initializing payment:", error);
+    logError("payment.initialize_failed", error);
 
     return res.status(500).json({
       success: false,
@@ -502,7 +503,6 @@ export const verifyPayment = async (
       return res.status(400).json({
         success: false,
         message: "Transaction verification failed",
-        error: verificationResponse.message,
       });
     }
 
@@ -543,6 +543,26 @@ export const verifyPayment = async (
 
     // ✅ Only proceed if Paystack says it's successful
     if (transactionData.status === "success") {
+      const result = await handleChargeSuccess(transactionData);
+      const settledPayment = result.payment;
+      if (!settledPayment || !result.investment) {
+        throw new Error("Payment settlement did not complete");
+      }
+      return res.status(200).json({
+        success: true,
+        message: result.newlySettled
+          ? "Transaction verified successfully"
+          : "Transaction already verified",
+        data: {
+          paymentID: settledPayment.paymentID,
+          userEmail: settledPayment.userEmail,
+          amount: settledPayment.amount,
+          paymentMethod: settledPayment.paymentMethod,
+          newInvestment: result.investment,
+        },
+      });
+
+      /* Replaced by the transactional settlement path above.
       if (payment.status === "completed") {
         // ✅ Handle second verification attempt gracefully
 
@@ -621,6 +641,7 @@ export const verifyPayment = async (
           newInvestment,
         },
       });
+      */
     }
 
     return res.status(400).json({
@@ -629,7 +650,7 @@ export const verifyPayment = async (
       status: transactionData.status,
     });
   } catch (error: any) {
-    console.error("Verify transaction error:", error);
+    logError("payment.verify_failed", error);
     return res.status(500).json({
       success: false,
       message: "Internal server error",
@@ -648,7 +669,7 @@ export const handleWebhook = async (req: Request, res: Response) => {
     }
 
     if (!secret) {
-      return res.status(500).send("Paystack secret key not configured");
+      return res.status(503).send("Payment service unavailable");
     }
 
     const rawBody = (req as Request & { rawBody?: Buffer }).rawBody;
@@ -669,12 +690,8 @@ export const handleWebhook = async (req: Request, res: Response) => {
     const event = req.body;
     const eventData = event.data;
 
-    console.log(`Received Webhook Event: ${event.event}`, eventData.reference);
+    logInfo("paystack.webhook_received", { eventType: String(event.event), reference: String(eventData.reference) });
 
-    // Acknowledge receipt immediately to prevent Paystack retries
-    res.sendStatus(200);
-
-    // Process the event asynchronously after acknowledging
     switch (event.event) {
       case "charge.success":
         await handleChargeSuccess(event.data);
@@ -694,15 +711,12 @@ export const handleWebhook = async (req: Request, res: Response) => {
         break;
 
       default:
-        console.log(`Unhandled event type: ${event.event}`);
+        logInfo("paystack.webhook_ignored", { eventType: String(event.event) });
     }
 
-    return res;
+    return res.sendStatus(200);
   } catch (error) {
-    // IMPORTANT: We already sent a 200, so we can only log the error.
-    console.error("Error in async webhook processing:", error);
-
-    // If something fails before we sent 200
+    logError("paystack.webhook_failed", error);
     return res.status(500).send("Webhook processing error");
   }
 };

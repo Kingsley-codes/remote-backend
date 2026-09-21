@@ -14,6 +14,7 @@ const bankAccountSchema = new Schema(
     accountNumber: {
       type: String,
       required: true,
+      select: false,
     },
     bankCode: {
       type: String,
@@ -22,6 +23,7 @@ const bankAccountSchema = new Schema(
     recipientCode: {
       type: String,
       required: true,
+      select: false,
     },
   },
   { timestamps: true },

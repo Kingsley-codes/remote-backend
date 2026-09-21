@@ -53,7 +53,7 @@ const isYouTubeUrl = (value: string) => {
 const uploadFile = async (uploaded?: Express.Multer.File) => {
   if (!uploaded) return undefined;
   const type = uploaded.mimetype.startsWith("video/") ? "video" : "image";
-  const result = await uploadMediaToCloudinary(uploaded.buffer, "remote-agric/agri-learn", type);
+  const result = await uploadMediaToCloudinary(uploaded, "remote-agric/agri-learn", type);
   return { type, url: result.secure_url, publicId: result.public_id };
 };
 

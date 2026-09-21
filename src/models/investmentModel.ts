@@ -17,6 +17,7 @@ const investmentSchema = new Schema(
       type: String,
       ref: "Transaction",
       required: true,
+      unique: true,
     },
     produce: {
       type: String,

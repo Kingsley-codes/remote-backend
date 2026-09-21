@@ -19,7 +19,7 @@ import {
   getDashboardStats,
 } from "../controllers/adminDashboardController.js";
 import { adminAuthenticate } from "../middleware/authenticationMiddleware.js";
-import { uploadProducerImages } from "../middleware/uploadMiddleware.js";
+import { cleanupUploadedFiles, handleUploadErrors, uploadProducerImages } from "../middleware/uploadMiddleware.js";
 
 const adminDashboardRouter = express.Router();
 adminDashboardRouter.get("/overview", adminAuthenticate, getDashboardOverview);
@@ -52,13 +52,17 @@ adminDashboardRouter.get("/farmers", adminAuthenticate, getAllFarmers);
 adminDashboardRouter.post(
   "/farmers",
   adminAuthenticate,
+  cleanupUploadedFiles,
   uploadProducerImages,
+  handleUploadErrors,
   createFarmer,
 );
 adminDashboardRouter.patch(
   "/farmers/:farmerId",
   adminAuthenticate,
+  cleanupUploadedFiles,
   uploadProducerImages,
+  handleUploadErrors,
   updateFarmer,
 );
 adminDashboardRouter.patch(

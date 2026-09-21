@@ -21,6 +21,16 @@ import Transaction from "../models/transactionModel.js";
 import { consumeEmailOtp, issueEmailOtp } from "../services/otpService.js";
 import { sendOtpEmail } from "../services/emailService.js";
 import crypto from "crypto";
+import { logError } from "../utils/logger.js";
+
+const maskedBankAccount = (bank: { _id: unknown; accountName: string; accountNumber: string; bankCode: string; createdAt?: Date; updatedAt?: Date }) => ({
+  _id: String(bank._id),
+  accountName: bank.accountName,
+  accountNumber: `******${bank.accountNumber.slice(-4)}`,
+  bankCode: bank.bankCode,
+  createdAt: bank.createdAt,
+  updatedAt: bank.updatedAt,
+});
 
 export const getUserDashboardOverview = async (req: Request, res: Response) => {
   try {
@@ -191,7 +201,7 @@ export const getUserTransactionHistory = async (
       },
     });
   } catch (error: any) {
-    console.error("Transaction history error:", error);
+    logError("wallet.transaction_history_failed", error, { userId: req.user?.toString() });
 
     return res.status(500).json({
       success: false,
@@ -224,7 +234,7 @@ export const getUserTransactionById = async (req: Request, res: Response) => {
 
     return res.status(200).json({ success: true, data: { transaction } });
   } catch (error: any) {
-    console.error("Get transaction error:", error);
+    logError("wallet.transaction_fetch_failed", error, { userId: req.user?.toString() });
     return res.status(500).json({
       success: false,
       message: "Unable to get transaction",
@@ -274,7 +284,7 @@ export const getUserInvestments = async (req: Request, res: Response) => {
       },
     });
   } catch (error: any) {
-    console.error("Error fetching user investments:", error);
+    logError("investment.user_list_failed", error, { userId: req.user?.toString() });
     return res.status(500).json({
       success: false,
       message: "Internal server error",
@@ -337,7 +347,7 @@ export const chooseHarvestReturn = async (req: Request, res: Response) => {
       data: { investment },
     });
   } catch (error: any) {
-    console.error("Harvest choice error:", error);
+    logError("investment.harvest_choice_failed", error, { userId: req.user?.toString() });
     return res.status(500).json({
       success: false,
       message: "Unable to save harvest choice",
@@ -388,7 +398,7 @@ export const requestBankAccountOtp = async (req: Request, res: Response) => {
         message: "A verification code has been sent to your email",
       });
   } catch (err) {
-    console.error("Bank account OTP request error:", err);
+    logError("bank_account.otp_request_failed", err, { userId: req.user?.toString() });
     return res
       .status(503)
       .json({ success: false, message: "Unable to send verification code" });
@@ -455,21 +465,21 @@ export const addBankAccount = async (req: Request, res: Response) => {
 
     return res.status(201).json({
       success: true,
-      data: bank,
+      data: maskedBankAccount(bank),
     });
   } catch (err: any) {
+    logError("bank_account.create_failed", err, { userId: req.user?.toString() });
     return res.status(500).json({
       success: false,
-      message: err.response?.data || "Failed to add bank",
+      message: "Failed to add bank account",
     });
   }
 };
 
 export const getBankAccount = async (req: Request, res: Response) => {
   const bank = await BankAccount.findOne({ user: req.user })
-    .select("accountName accountNumber bankCode createdAt")
-    .lean();
-  return res.json({ success: true, data: bank });
+    .select("accountName +accountNumber bankCode createdAt updatedAt");
+  return res.json({ success: true, data: bank ? maskedBankAccount(bank) : null });
 };
 
 export const updateBankAccount = async (req: Request, res: Response) => {
@@ -484,7 +494,10 @@ export const updateBankAccount = async (req: Request, res: Response) => {
       return res
         .status(401)
         .json({ success: false, message: "Invalid credentials" });
-    const existing = await BankAccount.findOne({ user: userId });
+    if (!accountName || !/^\d{10}$/.test(accountNumber ?? "") || !bankCode) {
+      return res.status(400).json({ success: false, message: "Valid account details are required" });
+    }
+    const existing = await BankAccount.findOne({ user: userId }).select("+accountNumber +recipientCode");
     if (!existing)
       return res
         .status(404)
@@ -501,13 +514,14 @@ export const updateBankAccount = async (req: Request, res: Response) => {
       recipientCode: recipient.recipient_code,
     });
     await existing.save();
-    return res.json({ success: true, data: existing });
+    return res.json({ success: true, data: maskedBankAccount(existing) });
   } catch (err: any) {
+    logError("bank_account.update_failed", err, { userId: req.user?.toString() });
     return res
       .status(500)
       .json({
         success: false,
-        message: err.response?.data ?? "Failed to update bank account",
+        message: "Failed to update bank account",
       });
   }
 };
@@ -706,9 +720,9 @@ export const withdrawBalance = async (req: Request, res: Response) => {
           throw new Error("Invalid credentials");
         }
 
-        const bankDetails = await BankAccount.findOne({ user: userId }).session(
-          session,
-        );
+        const bankDetails = await BankAccount.findOne({ user: userId })
+          .select("+recipientCode")
+          .session(session);
         if (!bankDetails) throw new Error("No bank account found");
         bankRecipientCode = bankDetails.recipientCode;
 
@@ -805,7 +819,7 @@ export const withdrawBalance = async (req: Request, res: Response) => {
       throw error;
     }
   } catch (error: any) {
-    console.error("Withdrawal error:", error.message);
+    logError("withdrawal.request_failed", error, { userId: req.user?.toString() });
     return res.status(400).json({
       success: false,
       message: "Unable to process withdrawal",

@@ -1,17 +1,8 @@
 import { Request, Response, NextFunction } from "express";
-import jwt, { JwtPayload } from "jsonwebtoken";
 import User from "../models/userModel.js";
 import Admin from "../models/adminModel.js";
-
-interface UserJwtPayload extends JwtPayload {
-  id: string;
-  type: "user";
-}
-
-interface AdminJwtPayload extends JwtPayload {
-  id: string;
-  type: "admin";
-}
+import { verifyIdentityToken } from "../services/tokenService.js";
+import { logError } from "../utils/logger.js";
 
 export const requireTrustedOrigin = (req: Request, res: Response): boolean => {
   if (["GET", "HEAD", "OPTIONS"].includes(req.method)) return true;
@@ -21,6 +12,11 @@ export const requireTrustedOrigin = (req: Request, res: Response): boolean => {
   if (origin && allowedOrigins.includes(origin)) return true;
   res.status(403).json({ status: "fail", message: "Invalid request origin" });
   return false;
+};
+
+export const trustedOriginOnly = (req: Request, res: Response, next: NextFunction) => {
+  if (!requireTrustedOrigin(req, res)) return;
+  next();
 };
 
 // Protection Middleware
@@ -39,19 +35,17 @@ export const userAuthenticate = async (
       });
     }
 
-    const secret = process.env.JWT_SECRET;
-    if (!secret) throw new Error("Authentication is not configured");
-    const decoded = jwt.verify(token, secret) as UserJwtPayload;
-    if (decoded.type !== "user") throw new Error("Invalid token");
+    const decoded = verifyIdentityToken(token, "user");
 
     const currentUser = await User.findOne({ _id: decoded.id, status: "active" });
     if (!currentUser) throw new Error("User not found");
+    if (currentUser.sessionVersion !== decoded.sv) throw new Error("Session revoked");
     if (!requireTrustedOrigin(req, res)) return;
 
     req.user = currentUser._id;
     return next();
   } catch (err: any) {
-    console.error("Protect error:", err);
+    logError("auth.user_rejected", err, { path: req.originalUrl });
     const message =
       err.name === "JsonWebTokenError" || err.message === "Invalid token"
         ? "Invalid token"
@@ -70,12 +64,10 @@ export const optionalUserAuthenticate = async (req: Request, _res: Response, nex
   try {
     const token = req.cookies.user_token;
     if (token) {
-      const secret = process.env.JWT_SECRET;
-      if (!secret) throw new Error("Authentication is not configured");
-      const decoded = jwt.verify(token, secret) as UserJwtPayload;
-      if (decoded.type !== "user") throw new Error("Invalid token");
-      const user = await User.exists({ _id: decoded.id, status: "active" });
+      const decoded = verifyIdentityToken(token, "user");
+      const user = await User.findOne({ _id: decoded.id, status: "active" }).select("sessionVersion");
       if (user) {
+        if (user.sessionVersion !== decoded.sv) throw new Error("Session revoked");
         if (!requireTrustedOrigin(req, _res)) return;
         req.user = user._id;
       }
@@ -101,19 +93,17 @@ export const adminAuthenticate = async (
       });
     }
 
-    const secret = process.env.JWT_SECRET;
-    if (!secret) throw new Error("Authentication is not configured");
-    const decoded = jwt.verify(token, secret) as AdminJwtPayload;
-    if (decoded.type !== "admin") throw new Error("Invalid token");
+    const decoded = verifyIdentityToken(token, "admin");
 
     const currentUser = await Admin.findOne({ _id: decoded.id, status: "active" });
     if (!currentUser) throw new Error("Admin not found");
+    if (currentUser.sessionVersion !== decoded.sv) throw new Error("Session revoked");
     if (!requireTrustedOrigin(req, res)) return;
 
     req.admin = currentUser._id;
     return next();
   } catch (err: any) {
-    console.error("Protect error:", err);
+    logError("auth.admin_rejected", err, { path: req.originalUrl });
     const message =
       err.name === "JsonWebTokenError" || err.message === "Invalid token"
         ? "Invalid token"
