@@ -2,6 +2,7 @@ allowBuilds:
   bcrypt: true
   esbuild: true
 overrides:
+  brace-expansion: 5.0.9
   ip-address: 10.3.1
   qs: 6.16.0
   socket.io-parser: 4.2.7
