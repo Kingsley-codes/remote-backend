@@ -2,11 +2,18 @@ type LogMetadata = Record<string, string | number | boolean | null | undefined>;
 
 const errorSummary = (error: unknown) => {
   if (!(error instanceof Error)) return { errorType: "UnknownError" };
-  const withCode = error as Error & { code?: string | number; status?: number };
+  const withCode = error as Error & {
+    code?: string | number;
+    status?: number;
+    errors?: Record<string, unknown>;
+  };
   return {
     errorType: error.name,
     errorCode: withCode.code,
     status: withCode.status,
+    ...(error.name === "ValidationError" && withCode.errors
+      ? { validationFields: Object.keys(withCode.errors).join(",") }
+      : {}),
     ...(process.env.NODE_ENV === "development"
       ? { errorMessage: error.message, stack: error.stack }
       : {}),

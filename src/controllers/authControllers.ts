@@ -13,7 +13,7 @@ import { consumeEmailOtp, issueEmailOtp } from "../services/otpService.js";
 import { sendOtpEmail } from "../services/emailService.js";
 import { authCookieOptions, signIdentityToken } from "../services/tokenService.js";
 import { consumeOAuthState, issueOAuthState } from "../services/oauthStateService.js";
-import { writeActorAudit } from "../services/auditService.js";
+import { writeActorAuditSafely } from "../services/auditService.js";
 import { logError } from "../utils/logger.js";
 
 // Helper function to generate unique donor IDs
@@ -160,7 +160,7 @@ export const resetPassword = async (req: Request, res: Response) => {
     user.password = await bcrypt.hash(password, 12);
     user.sessionVersion = (user.sessionVersion ?? 0) + 1;
     await user.save();
-    await writeActorAudit(req, { action: "UPDATE", entityType: "USER", entityId: user.id, details: "Password reset; existing sessions revoked" });
+    await writeActorAuditSafely(req, { action: "UPDATE", entityType: "USER", entityId: user.id, details: "Password reset; existing sessions revoked" });
     return res.status(200).json({ status: "success", message: "Password reset successfully" });
   } catch (err) {
     logError("auth.password_reset_failed", err);
@@ -222,7 +222,7 @@ export const login = async (
 
     res.cookie("user_token", token, authCookieOptions());
     req.user = user._id;
-    await writeActorAudit(req, { action: "LOGIN", entityType: "USER", entityId: user.id, details: "Password login" });
+    await writeActorAuditSafely(req, { action: "LOGIN", entityType: "USER", entityId: user.id, details: "Password login" });
 
     return res.status(200).json({
       status: "success",
@@ -241,7 +241,7 @@ export const login = async (
 export const logout = async (req: Request, res: Response) => {
   if (req.user) {
     await User.updateOne({ _id: req.user }, { $inc: { sessionVersion: 1 } });
-    await writeActorAudit(req, { action: "LOGOUT", entityType: "USER", entityId: req.user.toString(), details: "All user sessions revoked" });
+    await writeActorAuditSafely(req, { action: "LOGOUT", entityType: "USER", entityId: req.user.toString(), details: "All user sessions revoked" });
   }
   res.clearCookie("user_token", authCookieOptions());
 
@@ -287,7 +287,7 @@ export const googleAuthCallback = (
         const token = signIdentityToken(user.id, "user", record.sessionVersion ?? 0);
         res.cookie("user_token", token, authCookieOptions());
         req.user = record._id;
-        await writeActorAudit(req, { action: "LOGIN", entityType: "USER", entityId: user.id, details: "Google OAuth login" });
+        await writeActorAuditSafely(req, { action: "LOGIN", entityType: "USER", entityId: user.id, details: "Google OAuth login" });
         res.redirect(`${process.env.FRONTEND_URL}/dashboard`);
       }).catch((error) => {
         logError("auth.oauth_user_callback_failed", error);

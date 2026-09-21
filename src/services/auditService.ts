@@ -43,6 +43,11 @@ type AuditInput = {
   session?: ClientSession;
 };
 
+type ActorAuditInput = Omit<
+  AuditInput,
+  "actorType" | "actorId" | "actorName" | "actorEmail" | "request"
+>;
+
 export async function writeAuditLog(input: AuditInput) {
   const record = {
     action: input.action,
@@ -66,7 +71,7 @@ export async function writeAuditLog(input: AuditInput) {
 
 export async function writeActorAudit(
   request: Request,
-  input: Omit<AuditInput, "actorType" | "actorId" | "actorName" | "actorEmail" | "request">,
+  input: ActorAuditInput,
 ) {
   const adminId = request.admin?.toString();
   const userId = request.user?.toString();
@@ -85,6 +90,21 @@ export async function writeActorAudit(
     } : {}),
     request,
   });
+}
+
+export async function writeActorAuditSafely(
+  request: Request,
+  input: ActorAuditInput,
+) {
+  try {
+    await writeActorAudit(request, input);
+  } catch (error) {
+    logError("audit.write_failed", error, {
+      action: input.action,
+      entityType: input.entityType,
+      entityId: input.entityId.slice(0, 200),
+    });
+  }
 }
 
 const entityFromPath = (path: string): AuditEntity => {

@@ -6,7 +6,7 @@ import { AdminJwtPayload } from "../config/passport.js";
 import passport from "passport";
 import { authCookieOptions, signIdentityToken } from "../services/tokenService.js";
 import { consumeOAuthState, issueOAuthState } from "../services/oauthStateService.js";
-import { writeActorAudit } from "../services/auditService.js";
+import { writeActorAuditSafely } from "../services/auditService.js";
 import { logError } from "../utils/logger.js";
 
 // Admin Login
@@ -56,7 +56,7 @@ export const adminLogin = async (
 
     res.cookie("admin_token", token, authCookieOptions());
     req.admin = admin._id;
-    await writeActorAudit(req, { action: "LOGIN", entityType: "ADMIN", entityId: admin.id, details: "Password login" });
+    await writeActorAuditSafely(req, { action: "LOGIN", entityType: "ADMIN", entityId: admin.id, details: "Password login" });
 
     return res.status(200).json({
       status: "success",
@@ -108,7 +108,7 @@ export const googleAuthCallback = (
         const token = signIdentityToken(user.id, "admin", record.sessionVersion ?? 0);
         res.cookie("admin_token", token, authCookieOptions());
         req.admin = record._id;
-        await writeActorAudit(req, { action: "LOGIN", entityType: "ADMIN", entityId: user.id, details: "Google OAuth login" });
+        await writeActorAuditSafely(req, { action: "LOGIN", entityType: "ADMIN", entityId: user.id, details: "Google OAuth login" });
         res.redirect(`${process.env.FRONTEND_URL}/admin/dashboard`);
       }).catch((error) => {
         logError("auth.oauth_admin_callback_failed", error);
@@ -121,7 +121,7 @@ export const googleAuthCallback = (
 export const adminLogout = async (req: Request, res: Response) => {
   if (req.admin) {
     await Admin.updateOne({ _id: req.admin }, { $inc: { sessionVersion: 1 } });
-    await writeActorAudit(req, { action: "LOGOUT", entityType: "ADMIN", entityId: req.admin.toString(), details: "All admin sessions revoked" });
+    await writeActorAuditSafely(req, { action: "LOGOUT", entityType: "ADMIN", entityId: req.admin.toString(), details: "All admin sessions revoked" });
   }
   res.clearCookie("admin_token", authCookieOptions());
 

@@ -38,7 +38,8 @@ const auditLogSchema = new Schema(
     entityId: { type: String, required: true },
     userId: { type: String, required: true },
     userName: { type: String, required: true },
-    userEmail: { type: String, required: true },
+    // System actors do not have an email address.
+    userEmail: { type: String, default: "" },
     actorType: {
       type: String,
       enum: ["ADMIN", "USER", "SYSTEM"],
