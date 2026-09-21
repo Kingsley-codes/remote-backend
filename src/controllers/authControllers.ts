@@ -221,6 +221,7 @@ export const login = async (
     user.password = null;
 
     res.cookie("user_token", token, authCookieOptions());
+    req.user = user._id;
     await writeActorAudit(req, { action: "LOGIN", entityType: "USER", entityId: user.id, details: "Password login" });
 
     return res.status(200).json({
