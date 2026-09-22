@@ -14,9 +14,11 @@ import {
 } from "../middleware/uploadMiddleware.js";
 import Transaction from "../models/transactionModel.js";
 import Wallet from "../models/walletModel.js";
+import Notification from "../models/notificationModel.js";
 import mongoose from "mongoose";
 import { generateReference } from "../helpers/paymentHelper.js";
 import { sendAccountStatusEmail } from "../services/emailService.js";
+import { sendUserEvent } from "../services/sseService.js";
 import { logError } from "../utils/logger.js";
 
 const safeSearchPattern = (value: unknown) =>
@@ -688,6 +690,7 @@ export const approveCashHarvestReturn = async (req: Request, res: Response) => {
     const now = new Date();
     const transactionRef = generateReference("harvest");
     let updatedInvestment: any = null;
+    let rolloverNotification: any = null;
 
     await session.withTransaction(async () => {
       const investment = await Investment.findOne({
@@ -754,7 +757,32 @@ export const approveCashHarvestReturn = async (req: Request, res: Response) => {
         ],
         { session },
       );
+
+      const notifications = await Notification.create(
+        [
+          {
+            title: "Your farm returns are ready",
+            message: `Your capital plus profit of NGN ${cashReturnAmount.toLocaleString("en-NG")} has been credited to your Agro Wallet. You can roll it over into ${investment.title} and choose any available track.`,
+            type: "admin",
+            produce: investment.produce,
+            ...(investment.track?.id ? { trackId: investment.track.id } : {}),
+            recipients: [investment.user],
+            createdBy: admin,
+          },
+        ],
+        { session },
+      );
+      rolloverNotification = notifications[0] ?? null;
     });
+
+    if (rolloverNotification && updatedInvestment) {
+      await rolloverNotification.populate("produce", "produceName title stage");
+      sendUserEvent(
+        String(updatedInvestment.user),
+        "notification",
+        rolloverNotification,
+      );
+    }
 
     return res.status(200).json({
       success: true,

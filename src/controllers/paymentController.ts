@@ -78,7 +78,9 @@ const handleWalletPayment = async (
       rolloverSource = await Investment.findOne({
         _id: rolloverInvestmentId,
         user: userId,
+        produce: produceId,
         status: "completed",
+        harvestChoice: "cash-return",
         cashReturnApprovedAt: { $exists: true },
         rolledOverTo: { $exists: false },
       }).session(session);
