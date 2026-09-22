@@ -61,6 +61,11 @@ export const getUserDashboardOverview = async (req: Request, res: Response) => {
         total + investment.totalPrice * investment.profit / 100,
       0,
     );
+    const totalProjectedReturn = activeInvestments.reduce(
+      (total, investment) =>
+        total + investment.totalPrice * (1 + investment.profit / 100),
+      0,
+    );
 
     return res.json({
       success: true,
@@ -74,6 +79,7 @@ export const getUserDashboardOverview = async (req: Request, res: Response) => {
         totalInvestedAmount,
         totalActiveInvestments: activeInvestments.length,
         totalProjectedProfit,
+        totalProjectedReturn,
       },
     });
   } catch (error: any) {
@@ -269,6 +275,11 @@ export const getUserInvestments = async (req: Request, res: Response) => {
         total + investment.totalPrice * investment.profit / 100,
       0,
     );
+    const totalProjectedReturn = activeInvestments.reduce(
+      (total, investment) =>
+        total + investment.totalPrice * (1 + investment.profit / 100),
+      0,
+    );
 
     return res.status(200).json({
       success: true,
@@ -281,6 +292,7 @@ export const getUserInvestments = async (req: Request, res: Response) => {
         totalInvestedAmount,
         totalActiveInvestments,
         totalProjectedProfit,
+        totalProjectedReturn,
       },
     });
   } catch (error: any) {
