@@ -555,17 +555,81 @@ export const removeBankAccount = async (req: Request, res: Response) => {
   return res.json({ success: true });
 };
 
+interface PaystackBank {
+  id: number;
+  name: string;
+  code: string;
+  active?: boolean;
+  is_deleted?: boolean;
+}
+
+const BANK_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+let bankCache: { banks: PaystackBank[]; expiresAt: number } | null = null;
+let bankFetchPromise: Promise<PaystackBank[]> | null = null;
+
+const fetchNigerianBanks = async (): Promise<PaystackBank[]> => {
+  if (bankCache && bankCache.expiresAt > Date.now()) return bankCache.banks;
+  if (bankFetchPromise) return bankFetchPromise;
+
+  bankFetchPromise = (async () => {
+    const banks: PaystackBank[] = [];
+    const seenCursors = new Set<string>();
+    let next: string | undefined;
+
+    do {
+      const response = await axios.get("https://api.paystack.co/bank", {
+        headers: {
+          Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
+        },
+        params: {
+          country: "nigeria",
+          currency: "NGN",
+          type: "nuban",
+          perPage: 100,
+          use_cursor: true,
+          ...(next ? { next } : {}),
+        },
+      });
+
+      banks.push(...(response.data.data ?? []));
+      const nextCursor = response.data.meta?.next as string | undefined;
+      if (!nextCursor || seenCursors.has(nextCursor)) break;
+      seenCursors.add(nextCursor);
+      next = nextCursor;
+    } while (next);
+
+    const uniqueBanks = Array.from(
+      new Map(
+        banks
+          .filter((bank) => bank.active !== false && bank.is_deleted !== true)
+          .map((bank) => [bank.code, bank]),
+      ).values(),
+    ).sort((a, b) => a.name.localeCompare(b.name));
+
+    bankCache = {
+      banks: uniqueBanks,
+      expiresAt: Date.now() + BANK_CACHE_TTL_MS,
+    };
+    return uniqueBanks;
+  })().finally(() => {
+    bankFetchPromise = null;
+  });
+
+  return bankFetchPromise;
+};
+
 export const getBanks = async (req: Request, res: Response) => {
   try {
-    const response = await axios.get("https://api.paystack.co/bank", {
-      headers: {
-        Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
-      },
-    });
+    const banks = await fetchNigerianBanks();
+    const search = String(req.query.search ?? "").trim().toLocaleLowerCase();
+    const results = search
+      ? banks.filter((bank) => bank.name.toLocaleLowerCase().includes(search))
+      : banks;
 
-    res.json(response.data.data);
+    return res.json(results);
   } catch (error) {
-    res.status(500).json({
+    logError("bank.list_failed", error);
+    return res.status(500).json({
       message: "Failed to fetch banks",
     });
   }
