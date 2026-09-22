@@ -199,7 +199,7 @@ export const deleteProduce = async (
 };
 
 export const editProduce = async (
-  req: Request<{}, {}, ProduceRequestBody>,
+  req: Request<{ produceId?: string }, {}, ProduceRequestBody>,
   res: Response,
 ) => {
   try {
@@ -212,7 +212,7 @@ export const editProduce = async (
     }
 
     const {
-      produceId,
+      produceId: bodyProduceId,
       produceName,
       title,
       totalUnit,
@@ -220,6 +220,7 @@ export const editProduce = async (
       price,
       category,
     } = req.body;
+    const produceId = req.params.produceId ?? bodyProduceId;
 
     if (!req.files || Array.isArray(req.files)) {
       return res.status(400).json({

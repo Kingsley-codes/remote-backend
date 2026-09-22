@@ -26,7 +26,7 @@ adminProduceRouter.get("/", adminAuthenticate, getAllProduce);
 adminProduceRouter.delete("/:produceId", adminAuthenticate, deleteProduce);
 
 adminProduceRouter.patch(
-  "/",
+  "/:produceId",
   adminAuthenticate,
   cleanupUploadedFiles,
   uploadProduceImages,
@@ -39,11 +39,31 @@ adminProduceRouter.post(
   adminAuthenticate,
   activateProduce,
 );
-adminProduceRouter.patch("/:produceID/status", adminAuthenticate, updateProduceStatus);
-adminProduceRouter.patch("/:produceID/stage", adminAuthenticate, updateProduceStage);
-adminProduceRouter.post("/:produceID/tracks", adminAuthenticate, addProduceTrack);
-adminProduceRouter.delete("/:produceID/tracks/:trackID", adminAuthenticate, deleteProduceTrack);
-adminProduceRouter.patch("/:produceID/tracks/:trackID/stage", adminAuthenticate, updateTrackStage);
+adminProduceRouter.patch(
+  "/:produceID/status",
+  adminAuthenticate,
+  updateProduceStatus,
+);
+adminProduceRouter.patch(
+  "/:produceID/stage",
+  adminAuthenticate,
+  updateProduceStage,
+);
+adminProduceRouter.post(
+  "/:produceID/tracks",
+  adminAuthenticate,
+  addProduceTrack,
+);
+adminProduceRouter.delete(
+  "/:produceID/tracks/:trackID",
+  adminAuthenticate,
+  deleteProduceTrack,
+);
+adminProduceRouter.patch(
+  "/:produceID/tracks/:trackID/stage",
+  adminAuthenticate,
+  updateTrackStage,
+);
 adminProduceRouter.post(
   "/suspend/:produceId",
   adminAuthenticate,
