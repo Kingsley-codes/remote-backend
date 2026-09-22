@@ -577,23 +577,15 @@ export const addProduceTrack = async (req: Request, res: Response) => {
       return res.status(404).json({ success: false, message: "Produce not found" });
     }
 
-    let validatedTracks;
+    let newTrack;
     try {
-      validatedTracks = validateTracks(
-        [
-          ...produce.tracks.map((track) => ({
-            name: track.name,
-            startMonth: track.startMonth,
-            endMonth: track.endMonth,
-            stage: track.stage,
-          })),
-          {
-            name: typeof req.body.name === "string" ? req.body.name : undefined,
-            startMonth: Number(req.body.startMonth),
-            endMonth: Number(req.body.endMonth),
-            stage: "preparation",
-          },
-        ],
+      [newTrack] = validateTracks(
+        [{
+          name: typeof req.body.name === "string" ? req.body.name : undefined,
+          startMonth: Number(req.body.startMonth),
+          endMonth: Number(req.body.endMonth),
+          stage: "preparation",
+        }],
         produce.duration,
         produce.category as FarmCategory,
       );
@@ -604,9 +596,19 @@ export const addProduceTrack = async (req: Request, res: Response) => {
       });
     }
 
-    const newTrack = validatedTracks[validatedTracks.length - 1];
     if (!newTrack) {
       return res.status(400).json({ success: false, message: "Invalid track" });
+    }
+    const duplicate = produce.tracks.some(
+      (track) =>
+        track.startMonth === newTrack.startMonth &&
+        track.endMonth === newTrack.endMonth,
+    );
+    if (duplicate) {
+      return res.status(409).json({
+        success: false,
+        message: "A track with this start and end month already exists",
+      });
     }
     produce.tracks.push(newTrack);
     await produce.save();
@@ -619,7 +621,12 @@ export const addProduceTrack = async (req: Request, res: Response) => {
     });
   } catch (error) {
     logError("admin.track_create_failed", error);
-    return res.status(500).json({ success: false, message: "Unable to add track" });
+    return res.status(error instanceof Error && error.name === "ValidationError" ? 400 : 500).json({
+      success: false,
+      message: error instanceof Error && error.name === "ValidationError"
+        ? error.message
+        : "Unable to add track",
+    });
   }
 };
 
