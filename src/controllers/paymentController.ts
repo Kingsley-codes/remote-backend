@@ -25,6 +25,7 @@ import Transaction from "../models/transactionModel.js";
 import { sendInvestmentPaymentEmail } from "../services/emailService.js";
 import validator from "validator";
 import { logError, logInfo } from "../utils/logger.js";
+import { getTrackSchedule } from "../utils/investmentTracks.js";
 
 const syncUserActiveInvestmentStatus = async (
   userId: string,
@@ -52,89 +53,101 @@ const handleWalletPayment = async (
   amount: number,
   email: string,
   produceId: string,
-  produceTitle: string,
   units: number,
-  duration: number,
-  ROI: number,
+  trackId: string,
+  startsAt: Date,
+  endsAt: Date,
   idempotencyKey: string,
   idempotencyRequestHash: string,
+  rolloverInvestmentId?: string,
 ) => {
   const session = await mongoose.startSession();
-
   try {
     session.startTransaction();
     const produce = await Produce.findOneAndUpdate(
-      { _id: produceId, status: "active", remainingUnit: { $gte: units }, minimumUnit: { $lte: units } },
+      { _id: produceId, status: "active", remainingUnit: { $gte: units }, minimumUnit: { $lte: units }, "tracks._id": trackId },
       { $inc: { remainingUnit: -units } },
       { new: true, session },
     );
-    if (!produce) throw new Error("This opportunity is closed or the requested units are unavailable");
-    const userWallet = await Wallet.findOneAndUpdate(
-      { user: userId, balance: { $gte: Number(amount) } },
-      { $inc: { balance: -Number(amount) } },
-      { new: true, session },
-    );
+    if (!produce) throw new Error("OPPORTUNITY_UNAVAILABLE");
+    const track = produce.tracks.find((item) => String(item._id) === trackId);
+    if (!track) throw new Error("TRACK_NOT_FOUND");
 
-    if (!userWallet) {
-      throw new Error("INSUFFICIENT_WALLET_BALANCE");
+    let rolloverSource = null;
+    if (rolloverInvestmentId) {
+      rolloverSource = await Investment.findOne({
+        _id: rolloverInvestmentId,
+        user: userId,
+        status: "completed",
+        cashReturnApprovedAt: { $exists: true },
+        rolledOverTo: { $exists: false },
+      }).session(session);
+      if (!rolloverSource) throw new Error("ROLLOVER_NOT_ELIGIBLE");
     }
 
-    const paymentID = generatePaymentID();
+    const userWallet = await Wallet.findOneAndUpdate(
+      { user: userId, balance: { $gte: amount } },
+      { $inc: { balance: -amount } },
+      { new: true, session },
+    );
+    if (!userWallet) throw new Error("INSUFFICIENT_WALLET_BALANCE");
 
-    const newPayment = new Transaction({
+    const paymentID = generatePaymentID();
+    const newPayment = await Transaction.create([{
       user: userId,
       transactionType: "investment-payment",
       transactionID: paymentID,
-      paymentID: paymentID,
+      paymentID,
       produce: produceId,
+      trackId,
+      startsAt,
+      endsAt,
+      rolloverInvestment: rolloverSource?._id,
       userEmail: email,
-      amount: amount,
+      amount,
+      units,
       paymentMethod: "wallet",
       status: "completed",
       idempotencyKey,
       idempotencyRequestHash,
-    });
+    }], { session });
 
-    await newPayment.save({ session });
-
-    const newInvestment = new Investment({
+    const newInvestment = await Investment.create([{
       user: userId,
       produce: produceId,
       orderID: generateOrderID(),
-      payment: newPayment._id!,
-      title: produceTitle,
-      units: units,
+      payment: newPayment[0]!._id,
+      title: produce.title,
+      units,
       totalPrice: amount,
       orderStatus: "confirmed",
       customerEmail: email,
-      duration: duration,
-      ROI,
-      stage: normalizeStage(produce.stage, produce.category),
-    });
-    await newInvestment.save({ session });
+      duration: produce.duration,
+      profit: rolloverSource ? produce.rolloverProfit : produce.profit,
+      stage: normalizeStage(track.stage, produce.category),
+      track: { id: track._id, name: track.name, startMonth: track.startMonth, endMonth: track.endMonth },
+      startsAt,
+      endsAt,
+      isRollover: Boolean(rolloverSource),
+      rolledOverFrom: rolloverSource?._id,
+    }], { session });
+
+    if (rolloverSource) {
+      rolloverSource.rolledOverTo = newInvestment[0]!._id;
+      rolloverSource.rolledOverAt = new Date();
+      await rolloverSource.save({ session });
+    }
     await syncUserActiveInvestmentStatus(userId, session);
-    await awardReferralCommission(
-      userId,
-      newInvestment._id.toString(),
-      session,
-    );
-
-    // 5️⃣ Commit transaction
+    await awardReferralCommission(userId, newInvestment[0]!._id.toString(), session);
     await session.commitTransaction();
-    session.endSession();
-
-    return {
-      paymentID,
-      newInvestment,
-    };
+    return { paymentID, newInvestment: newInvestment[0]! };
   } catch (error) {
-    // ❌ Rollback everything
     await session.abortTransaction();
-    session.endSession();
     throw error;
+  } finally {
+    await session.endSession();
   }
 };
-
 const IDEMPOTENCY_KEY_PATTERN = /^[A-Za-z0-9._:-]{16,128}$/;
 
 const paymentRequestHash = (input: {
@@ -143,6 +156,8 @@ const paymentRequestHash = (input: {
   amount: number;
   units: number;
   paymentMethod: string;
+  trackId: string;
+  rolloverInvestmentId?: string;
 }) =>
   crypto
     .createHash("sha256")
@@ -227,14 +242,17 @@ export const initializePayment = async (req: Request, res: Response) => {
       produceId,
       amount,
       units,
+      trackId,
+      acknowledgeClosedTrack,
+      rolloverInvestmentId,
     } = req.body;
     let userId = req.user?.toString();
 
-    if (!paymentMethod || !amount || !produceId || !units) {
+    if (!paymentMethod || !amount || !produceId || !units || !trackId) {
       return res.status(400).json({
         success: false,
         message:
-          "Missing required fields: units, produceId, paymentMethod, amount",
+          "Missing required fields: units, produceId, trackId, paymentMethod, amount",
       });
     }
     const numericAmount = Number(amount);
@@ -244,6 +262,9 @@ export const initializePayment = async (req: Request, res: Response) => {
       !Number.isSafeInteger(numericUnits) || numericUnits <= 0
     ) {
       return res.status(400).json({ success: false, message: "Invalid payment amount or investment units" });
+    }
+    if (rolloverInvestmentId && paymentMethod !== "wallet") {
+      return res.status(400).json({ success: false, message: "Rollover investments must be paid from your Agro Wallet" });
     }
     if (paymentMethod !== "card" && paymentMethod !== "wallet") {
       return res.status(400).json({ success: false, message: "Unsupported payment method" });
@@ -291,6 +312,8 @@ export const initializePayment = async (req: Request, res: Response) => {
       amount: numericAmount,
       units: numericUnits,
       paymentMethod,
+      trackId: String(trackId),
+      ...(rolloverInvestmentId ? { rolloverInvestmentId: String(rolloverInvestmentId) } : {}),
     });
     const existingPayment = await Transaction.findOne({ idempotencyKey });
     if (existingPayment) {
@@ -306,6 +329,18 @@ export const initializePayment = async (req: Request, res: Response) => {
       });
     }
 
+    const track = produce.tracks.find((item) => String(item._id) === String(trackId));
+    if (!track) return res.status(404).json({ success: false, message: "Track not found" });
+    const schedule = getTrackSchedule(track.startMonth, produce.duration);
+    if (schedule.isClosedForCurrentYear && acknowledgeClosedTrack !== true) {
+      return res.status(409).json({
+        success: false,
+        code: "TRACK_CLOSED_FOR_YEAR",
+        message: `${track.name} is closed for this year. If you continue, your farm will start next year.`,
+        requiresAcknowledgement: true,
+        data: { trackId: String(track._id), startsAt: schedule.startDate, endsAt: schedule.endDate },
+      });
+    }
     if (produce.status !== "active") {
       return res.status(409).json({ success: false, message: "This opportunity is closed to new investments" });
     }
@@ -330,12 +365,13 @@ export const initializePayment = async (req: Request, res: Response) => {
           numericAmount,
           email,
           produceId,
-          produce.title,
           numericUnits,
-          produce.duration,
-          produce.ROI,
+          String(track._id),
+          schedule.startDate,
+          schedule.endDate,
           idempotencyKey,
           requestHash,
+          rolloverInvestmentId ? String(rolloverInvestmentId) : undefined,
         );
         void sendInvestmentPaymentEmail(
           email,
@@ -359,12 +395,16 @@ export const initializePayment = async (req: Request, res: Response) => {
             return sendExistingInitialization(res, existing, requestHash);
           }
         }
-        const insufficientBalance = error?.message === "INSUFFICIENT_WALLET_BALANCE";
-        return res.status(insufficientBalance ? 409 : 500).json({
+        const messages: Record<string, string> = {
+          INSUFFICIENT_WALLET_BALANCE: "Insufficient Agro Wallet balance",
+          ROLLOVER_NOT_ELIGIBLE: "This investment is not eligible for rollover",
+          OPPORTUNITY_UNAVAILABLE: "This opportunity is closed or the requested units are unavailable",
+          TRACK_NOT_FOUND: "Track not found",
+        };
+        const message = messages[error?.message];
+        return res.status(message ? 409 : 500).json({
           success: false,
-          message: insufficientBalance
-            ? "Insufficient Agro Wallet balance"
-            : "Failed to process wallet payment",
+          message: message ?? "Failed to process wallet payment",
           error: "Payment could not be completed",
         });
       }
@@ -385,6 +425,9 @@ export const initializePayment = async (req: Request, res: Response) => {
           paymentID,
           userEmail: email,
           produce: produceId,
+          trackId: track._id,
+          startsAt: schedule.startDate,
+          endsAt: schedule.endDate,
           amount: numericAmount,
           units: numericUnits,
           paymentMethod,
@@ -412,6 +455,7 @@ export const initializePayment = async (req: Request, res: Response) => {
           user_name: userName,
           user_email: email,
           produce_id: produceId,
+          track_id: String(track._id),
           amount: numericAmount,
           units: numericUnits,
           payment_id: paymentID,
@@ -530,7 +574,7 @@ export const verifyPayment = async (
       });
     }
 
-    // If failed → mark failed
+    // If failed •†’ mark failed
     if (transactionData.status === "failed") {
       payment.status = "failed";
       await payment.save();
@@ -541,7 +585,7 @@ export const verifyPayment = async (
       });
     }
 
-    // ✅ Only proceed if Paystack says it's successful
+    // •œ… Only proceed if Paystack says it's successful
     if (transactionData.status === "success") {
       const result = await handleChargeSuccess(transactionData);
       const settledPayment = result.payment;

@@ -1,5 +1,14 @@
 import { productionStages } from "../utils/productionStages.js";
 import { Schema, model, InferSchemaType, HydratedDocument } from "mongoose";
+const trackSchema = new Schema(
+  {
+    name: { type: String, required: true, trim: true },
+    startMonth: { type: Number, required: true, min: 1, max: 12 },
+    endMonth: { type: Number, required: true, min: 1, max: 12 },
+    stage: { type: String, enum: productionStages, required: true },
+  },
+  { _id: true },
+);
 
 const produceSchema = new Schema(
   {
@@ -92,9 +101,15 @@ const produceSchema = new Schema(
       type: Number,
       required: true,
     },
-    ROI: {
-      type: Number,
+    profit: { type: Number, required: true, min: 0 },
+    rolloverProfit: { type: Number, required: true, min: 0 },
+    tracks: {
+      type: [trackSchema],
       required: true,
+      validate: {
+        validator: (tracks: unknown[]) => Array.isArray(tracks) && tracks.length > 0,
+        message: "At least one track is required",
+      },
     },
   },
   { timestamps: true },

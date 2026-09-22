@@ -34,8 +34,8 @@ type UserQuery = {
 const generateHarvestTransactionID = () =>
   "HAR-" + Math.random().toString(36).substring(2, 10).toUpperCase();
 
-const calculateCashReturn = (totalPrice: number, roi: string | number) =>
-  Math.round(totalPrice * (1 + Number(roi || 0) / 100));
+const calculateCashReturn = (totalPrice: number, profit: string | number) =>
+  Math.round(totalPrice * (1 + Number(profit || 0) / 100));
 
 export const getDashboardOverview = async (req: Request, res: Response) => {
   try {
@@ -703,7 +703,7 @@ export const approveCashHarvestReturn = async (req: Request, res: Response) => {
 
       const cashReturnAmount = calculateCashReturn(
         investment.totalPrice,
-        investment.ROI,
+        investment.profit,
       );
 
       updatedInvestment = await Investment.findOneAndUpdate(

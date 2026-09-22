@@ -4,13 +4,13 @@ import Produce from "../models/produceModel.js";
 import Investment from "../models/investmentModel.js";
 import { addSseClient, sendUsersEvent } from "../services/sseService.js";
 
-export async function produceInvestorIds(produceId: string) {
-  return (await Investment.distinct("user", { produce: produceId, status: "ongoing", orderStatus: "confirmed" })).map(String);
+export async function produceInvestorIds(produceId: string, trackId?: string) {
+  return (await Investment.distinct("user", { produce: produceId, ...(trackId ? { "track.id": trackId } : {}), status: "ongoing", orderStatus: "confirmed" })).map(String);
 }
 
-export async function createProduceNotification(input: { produceId: string; title: string; message: string; type: "stage-change" | "admin"; adminId?: unknown }) {
-  const recipients = await produceInvestorIds(input.produceId);
-  const notification = await Notification.create({ title: input.title, message: input.message, type: input.type, produce: input.produceId, recipients, createdBy: input.adminId });
+export async function createProduceNotification(input: { produceId: string; trackId?: string; title: string; message: string; type: "stage-change" | "admin"; adminId?: unknown }) {
+  const recipients = await produceInvestorIds(input.produceId, input.trackId);
+  const notification = await Notification.create({ title: input.title, message: input.message, type: input.type, produce: input.produceId, trackId: input.trackId, recipients, createdBy: input.adminId });
   await notification.populate("produce", "produceName title stage");
   sendUsersEvent(recipients, "notification", notification);
   return notification;

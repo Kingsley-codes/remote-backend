@@ -47,59 +47,65 @@ export const handleChargeSuccess = async (
         transactionType: "investment-payment",
       }).session(session);
       if (!payment) throw new Error("Payment record not found");
+      const settledPayment = payment;
 
-      const expectedAmount = Math.round(payment.amount * 100);
+      const expectedAmount = Math.round(settledPayment.amount * 100);
       if (eventData.amount !== expectedAmount || eventData.currency?.toUpperCase() !== "NGN") {
         throw new Error("Payment provider amount or currency mismatch");
       }
 
-      investment = await Investment.findOne({ payment: payment._id }).session(session);
-      if (payment.status === "completed") {
+      investment = await Investment.findOne({ payment: settledPayment._id }).session(session);
+      if (settledPayment.status === "completed") {
         if (!investment) throw new Error("Completed payment is missing its investment");
         return;
       }
 
-      const units = payment.units ?? Number(eventData.metadata?.units);
+      const units = settledPayment.units ?? Number(eventData.metadata?.units);
       if (!Number.isSafeInteger(units) || units <= 0) throw new Error("Invalid settled unit count");
 
       const produce = await Produce.findOneAndUpdate(
-        { _id: payment.produce, remainingUnit: { $gte: units } },
+        { _id: settledPayment.produce, remainingUnit: { $gte: units }, "tracks._id": settledPayment.trackId },
         { $inc: { remainingUnit: -units } },
         { new: true, session },
       );
       if (!produce) throw new Error("Insufficient units to settle this paid transaction");
+      const track = produce.tracks.find((item) => String(item._id) === String(settledPayment.trackId));
+      if (!track || !settledPayment.startsAt || !settledPayment.endsAt) throw new Error("Payment is missing its selected track schedule");
 
       const created = await Investment.create([{
-        user: payment.user,
-        payment: payment._id,
-        produce: payment.produce,
+        user: settledPayment.user,
+        payment: settledPayment._id,
+        produce: settledPayment.produce,
         orderID: generateOrderID(),
         units,
         title: produce.title,
-        totalPrice: payment.amount,
-        customerEmail: payment.userEmail,
+        totalPrice: settledPayment.amount,
+        customerEmail: settledPayment.userEmail,
         orderStatus: "confirmed",
-        transactionRef: payment.transactionRef,
+        transactionRef: settledPayment.transactionRef,
         duration: produce.duration,
-        ROI: produce.ROI,
-        stage: normalizeStage(produce.stage, produce.category),
+        profit: produce.profit,
+        stage: normalizeStage(track.stage, produce.category),
+        track: { id: track._id, name: track.name, startMonth: track.startMonth, endMonth: track.endMonth },
+        startsAt: settledPayment.startsAt,
+        endsAt: settledPayment.endsAt,
       }], { session });
       investment = created[0]!;
 
-      await awardReferralCommission(payment.user.toString(), investment._id.toString(), session);
-      await User.findByIdAndUpdate(payment.user, { hasActiveInvestment: true }, { session });
+      await awardReferralCommission(settledPayment.user.toString(), investment._id.toString(), session);
+      await User.findByIdAndUpdate(settledPayment.user, { hasActiveInvestment: true }, { session });
 
-      payment.status = "completed";
-      payment.date = eventData.paid_at ? new Date(eventData.paid_at) : new Date();
-      await payment.save({ session });
+      settledPayment.status = "completed";
+      settledPayment.date = eventData.paid_at ? new Date(eventData.paid_at) : new Date();
+      await settledPayment.save({ session });
       await writeAuditLog({
         action: "PAYMENT_SETTLED",
         entityType: "PAYMENT",
-        entityId: payment.id,
+        entityId: settledPayment.id,
         actorType: "SYSTEM",
         actorId: "paystack",
         actorName: "Paystack",
-        details: `Payment ${payment.transactionRef} settled`,
+        details: `Payment ${settledPayment.transactionRef} settled`,
         session,
       });
       emailTitle = produce.title;

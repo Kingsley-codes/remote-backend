@@ -18,6 +18,10 @@ const transactionSchema = new Schema(
       type: String,
       ref: "Produce",
     },
+    trackId: { type: Schema.Types.ObjectId },
+    startsAt: { type: Date },
+    endsAt: { type: Date },
+    rolloverInvestment: { type: Schema.Types.ObjectId, ref: "Investment" },
     transactionID: {
       type: String,
       required: true,

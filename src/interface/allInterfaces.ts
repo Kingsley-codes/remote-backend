@@ -38,7 +38,9 @@ export interface ProduceRequestBody {
   totalUnit?: number;
   duration?: number;
   minimumUnit?: number;
-  ROI?: number;
+  profit?: number;
+  rolloverProfit?: number;
+  tracks?: Array<{ name?: string; startMonth: number; endMonth: number; stage?: string }> | string;
   description?: string;
   price?: number;
   category?: "crops" | "livestock" | "aquaculture";

@@ -44,7 +44,7 @@ export const getUserDashboardOverview = async (req: Request, res: Response) => {
 
     const [userInvestments, wallet] = await Promise.all([
       Investment.find({ user: userId })
-        .populate("produce", "produceName title category status stage image1 image2 image3")
+        .populate("produce", "produceName title category status stage image1 image2 image3 rolloverProfit tracks")
         .populate("payment", "amount status")
         .sort({ orderDate: -1 }),
       Wallet.findOne({ user: userId }),
@@ -56,9 +56,9 @@ export const getUserDashboardOverview = async (req: Request, res: Response) => {
       (total, investment) => total + investment.totalPrice,
       0,
     );
-    const totalProjectedROI = activeInvestments.reduce(
+    const totalProjectedProfit = activeInvestments.reduce(
       (total, investment) =>
-        total + investment.totalPrice * investment.ROI / 100,
+        total + investment.totalPrice * investment.profit / 100,
       0,
     );
 
@@ -73,7 +73,7 @@ export const getUserDashboardOverview = async (req: Request, res: Response) => {
         }),
         totalInvestedAmount,
         totalActiveInvestments: activeInvestments.length,
-        totalProjectedROI,
+        totalProjectedProfit,
       },
     });
   } catch (error: any) {
@@ -253,7 +253,7 @@ export const getUserInvestments = async (req: Request, res: Response) => {
     }
 
     const userInvestments = await Investment.find({ user: userId })
-      .populate("produce", "produceName title category status stage image1 image2 image3")
+      .populate("produce", "produceName title category status stage image1 image2 image3 rolloverProfit tracks")
       .populate("payment", "amount status");
 
     const totalInvestedAmount = userInvestments.reduce((total, investment) => {
@@ -264,9 +264,9 @@ export const getUserInvestments = async (req: Request, res: Response) => {
       (investment) => investment.status === "ongoing",
     );
     const totalActiveInvestments = activeInvestments.length;
-    const totalProjectedROI = activeInvestments.reduce(
+    const totalProjectedProfit = activeInvestments.reduce(
       (total, investment) =>
-        total + investment.totalPrice * investment.ROI / 100,
+        total + investment.totalPrice * investment.profit / 100,
       0,
     );
 
@@ -280,7 +280,7 @@ export const getUserInvestments = async (req: Request, res: Response) => {
         }),
         totalInvestedAmount,
         totalActiveInvestments,
-        totalProjectedROI,
+        totalProjectedProfit,
       },
     });
   } catch (error: any) {

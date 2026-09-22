@@ -1,4 +1,5 @@
 import { stagesByCategory, normalizeStage, type FarmCategory } from "../utils/productionStages.js";
+import { parseTracks, validateTracks } from "../utils/investmentTracks.js";
 import { Request, Response } from "express";
 import { logError } from "../utils/logger.js";
 import Produce from "../models/produceModel.js";
@@ -37,7 +38,9 @@ export const createProduce = async (
       description,
       price,
       category,
-      ROI,
+      profit,
+      rolloverProfit,
+      tracks,
     } = req.body;
 
     if (
@@ -46,7 +49,9 @@ export const createProduce = async (
       !totalUnit ||
       !duration ||
       !minimumUnit ||
-      !ROI ||
+      profit === undefined ||
+      rolloverProfit === undefined ||
+      !tracks ||
       !description ||
       !price ||
       !category
@@ -56,6 +61,16 @@ export const createProduce = async (
       });
     }
 
+    let validatedTracks;
+    try {
+      validatedTracks = validateTracks(
+        parseTracks(tracks),
+        Number(duration),
+        category as FarmCategory,
+      );
+    } catch (error) {
+      return res.status(400).json({ message: (error as Error).message });
+    }
     if (
       !req.files ||
       Array.isArray(req.files) ||
@@ -92,7 +107,9 @@ export const createProduce = async (
       price,
       isFeatured,
       duration,
-      ROI,
+      profit,
+      rolloverProfit,
+      tracks: validatedTracks,
       produceID: generateProduceID(),
       category,
       stage: category === "aquaculture" ? "pond-preparation" : "preparation",
@@ -499,6 +516,58 @@ export const updateProduceStage = async (req: Request, res: Response) => {
   }
 };
 
+export const updateTrackStage = async (req: Request, res: Response) => {
+  try {
+    const produceID = String(req.params.produceID);
+    const trackID = String(req.params.trackID);
+    const stage = String(req.body.stage ?? "");
+    const produce = await Produce.findById(produceID);
+    if (!produce) return res.status(404).json({ success: false, message: "Produce not found" });
+
+    const validStages: readonly string[] = stagesByCategory[produce.category as FarmCategory];
+    if (!validStages?.includes(stage)) {
+      return res.status(400).json({ success: false, message: "Invalid stage for this category" });
+    }
+    const track = produce.tracks.find((item) => String(item._id) === trackID);
+    if (!track) return res.status(404).json({ success: false, message: "Track not found" });
+
+    track.stage = normalizeStage(stage, produce.category);
+    await produce.save();
+    await Investment.updateMany(
+      { produce: produceID, "track.id": trackID, status: "ongoing" },
+      { stage: track.stage },
+    );
+
+    const label = stage.split("-").map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(" ");
+    await createProduceNotification({
+      produceId: produceID,
+      trackId: trackID,
+      title: `${produce.produceName} · ${track.name} updated`,
+      message: `Your ${track.name} farm has moved to ${label}.`,
+      type: "stage-change",
+      adminId: req.admin,
+    });
+
+    const investments = await Investment.find({
+      produce: produceID,
+      "track.id": trackID,
+      status: "ongoing",
+      orderStatus: "confirmed",
+    }).populate("user", "firstName email").select("user").lean();
+    const recipients = new Map<string, { firstName: string; email: string }>();
+    for (const investment of investments) {
+      const user = investment.user as unknown as { _id?: { toString(): string }; firstName?: string; email?: string } | null;
+      if (user?._id && user.email) recipients.set(user._id.toString(), { firstName: user.firstName || "Investor", email: user.email });
+    }
+    await Promise.all([...recipients.values()].map((user) =>
+      sendProduceStageEmail(user.email, user.firstName, `${produce.title} (${track.name})`, label),
+    ));
+    return res.json({ success: true, message: "Track stage updated successfully", data: { track } });
+  } catch (error) {
+    logError("admin.track_stage_update_failed", error);
+    return res.status(500).json({ success: false, message: "Server error" });
+  }
+};
 export const updateProduceStatus = async (req: Request, res: Response) => {
   const { status } = req.body;
   if (status !== "active" && status !== "closed") {

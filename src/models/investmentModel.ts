@@ -94,10 +94,19 @@ const investmentSchema = new Schema(
       type: Number,
       required: true,
     },
-    ROI: {
-      type: Number,
-      required: true,
+    profit: { type: Number, required: true },
+    track: {
+      id: { type: Schema.Types.ObjectId, required: true },
+      name: { type: String, required: true },
+      startMonth: { type: Number, required: true, min: 1, max: 12 },
+      endMonth: { type: Number, required: true, min: 1, max: 12 },
     },
+    startsAt: { type: Date, required: true },
+    endsAt: { type: Date, required: true },
+    isRollover: { type: Boolean, default: false },
+    rolledOverFrom: { type: Schema.Types.ObjectId, ref: "Investment" },
+    rolledOverTo: { type: Schema.Types.ObjectId, ref: "Investment" },
+    rolledOverAt: { type: Date },
   },
   { timestamps: true },
 );
