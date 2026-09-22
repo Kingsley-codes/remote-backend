@@ -568,6 +568,96 @@ export const updateTrackStage = async (req: Request, res: Response) => {
     return res.status(500).json({ success: false, message: "Server error" });
   }
 };
+
+export const addProduceTrack = async (req: Request, res: Response) => {
+  try {
+    const produceID = String(req.params.produceID);
+    const produce = await Produce.findById(produceID);
+    if (!produce) {
+      return res.status(404).json({ success: false, message: "Produce not found" });
+    }
+
+    let validatedTracks;
+    try {
+      validatedTracks = validateTracks(
+        [
+          ...produce.tracks.map((track) => ({
+            name: track.name,
+            startMonth: track.startMonth,
+            endMonth: track.endMonth,
+            stage: track.stage,
+          })),
+          {
+            name: typeof req.body.name === "string" ? req.body.name : undefined,
+            startMonth: Number(req.body.startMonth),
+            endMonth: Number(req.body.endMonth),
+            stage: "preparation",
+          },
+        ],
+        produce.duration,
+        produce.category as FarmCategory,
+      );
+    } catch (error) {
+      return res.status(400).json({
+        success: false,
+        message: error instanceof Error ? error.message : "Invalid track",
+      });
+    }
+
+    const newTrack = validatedTracks[validatedTracks.length - 1];
+    if (!newTrack) {
+      return res.status(400).json({ success: false, message: "Invalid track" });
+    }
+    produce.tracks.push(newTrack);
+    await produce.save();
+    const savedTrack = produce.tracks[produce.tracks.length - 1];
+
+    return res.status(201).json({
+      success: true,
+      message: "Track added successfully",
+      data: { track: savedTrack, produce },
+    });
+  } catch (error) {
+    logError("admin.track_create_failed", error);
+    return res.status(500).json({ success: false, message: "Unable to add track" });
+  }
+};
+
+export const deleteProduceTrack = async (req: Request, res: Response) => {
+  try {
+    const produceID = String(req.params.produceID);
+    const trackID = String(req.params.trackID);
+    const produce = await Produce.findById(produceID);
+    if (!produce) {
+      return res.status(404).json({ success: false, message: "Produce not found" });
+    }
+    if (produce.tracks.length === 1) {
+      return res.status(409).json({ success: false, message: "A produce must have at least one track" });
+    }
+    const trackIndex = produce.tracks.findIndex((track) => String(track._id) === trackID);
+    if (trackIndex < 0) {
+      return res.status(404).json({ success: false, message: "Track not found" });
+    }
+    if (await Investment.exists({ produce: produceID, "track.id": trackID })) {
+      return res.status(409).json({
+        success: false,
+        message: "This track cannot be deleted because it already has investments",
+      });
+    }
+
+    produce.tracks.splice(trackIndex, 1);
+    await produce.save();
+    return res.json({
+      success: true,
+      message: "Track deleted successfully",
+      data: { produce },
+    });
+  } catch (error) {
+    logError("admin.track_delete_failed", error);
+    return res.status(500).json({ success: false, message: "Unable to delete track" });
+  }
+};
+
 export const updateProduceStatus = async (req: Request, res: Response) => {
   const { status } = req.body;
   if (status !== "active" && status !== "closed") {

@@ -1,7 +1,9 @@
 import express from "express";
 import {
+  addProduceTrack,
   activateProduce,
   createProduce,
+  deleteProduceTrack,
   deleteProduce,
   editProduce,
   getAllProduce,
@@ -39,6 +41,8 @@ adminProduceRouter.post(
 );
 adminProduceRouter.patch("/:produceID/status", adminAuthenticate, updateProduceStatus);
 adminProduceRouter.patch("/:produceID/stage", adminAuthenticate, updateProduceStage);
+adminProduceRouter.post("/:produceID/tracks", adminAuthenticate, addProduceTrack);
+adminProduceRouter.delete("/:produceID/tracks/:trackID", adminAuthenticate, deleteProduceTrack);
 adminProduceRouter.patch("/:produceID/tracks/:trackID/stage", adminAuthenticate, updateTrackStage);
 adminProduceRouter.post(
   "/suspend/:produceId",
