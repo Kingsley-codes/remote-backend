@@ -21,8 +21,8 @@ const referralSchema = new Schema(
     },
     status: {
       type: String,
-      enum: ["registered", "rewarded"],
-      default: "registered",
+      enum: ["active", "expired", "registered", "rewarded"],
+      default: "active",
       index: true,
     },
     commission: {
@@ -34,6 +34,15 @@ const referralSchema = new Schema(
       ref: "Investment",
     },
     rewardedAt: Date,
+    rewardedUnits: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    expiresAt: {
+      type: Date,
+      index: true,
+    },
   },
   { timestamps: true },
 );

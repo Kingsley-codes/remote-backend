@@ -1,7 +1,21 @@
 import { Request, Response } from "express";
 import User from "../models/userModel.js";
 import Referral from "../models/referralModel.js";
-import { REFERRAL_COMMISSION } from "../services/referralService.js";
+import {
+  getReferralExpiry,
+  REFERRAL_REWARD_MONTHS,
+  REFERRAL_REWARD_PER_UNIT,
+} from "../services/referralService.js";
+
+const normalizeReferral = (referral: any) => {
+  const item = referral.toObject();
+  const expiresAt = item.expiresAt ?? getReferralExpiry(item.createdAt);
+  return {
+    ...item,
+    expiresAt,
+    status: new Date() >= expiresAt ? "expired" : "active",
+  };
+};
 
 export const getUserReferrals = async (req: Request, res: Response) => {
   const userId = req.user;
@@ -18,19 +32,22 @@ export const getUserReferrals = async (req: Request, res: Response) => {
     .populate("referredUser", "firstName lastName email farmerID")
     .sort({ createdAt: -1 });
 
-  const earned = referrals.reduce((sum, item) => sum + item.commission, 0);
+  const normalizedReferrals = referrals.map(normalizeReferral);
+  const earned = normalizedReferrals.reduce((sum, item) => sum + item.commission, 0);
 
   return res.json({
     success: true,
     data: {
       referralCode: user?.farmerID,
-      commissionAmount: REFERRAL_COMMISSION,
+      rewardPerUnit: REFERRAL_REWARD_PER_UNIT,
+      rewardDurationMonths: REFERRAL_REWARD_MONTHS,
       stats: {
-        total: referrals.length,
-        rewarded: referrals.filter((r) => r.status === "rewarded").length,
+        total: normalizedReferrals.length,
+        active: normalizedReferrals.filter((r) => r.status === "active").length,
+        rewarded: normalizedReferrals.filter((r) => r.commission > 0).length,
         earned,
       },
-      referrals,
+      referrals: normalizedReferrals,
     },
   });
 };
@@ -39,15 +56,20 @@ export const getAdminReferrals = async (req: Request, res: Response) => {
   const referrals = await Referral.find()
     .sort({ createdAt: -1 })
     .populate("referrer referredUser", "firstName lastName email farmerID");
+  const normalizedReferrals = referrals.map(normalizeReferral);
+
   res.json({
     success: true,
     data: {
+      rewardPerUnit: REFERRAL_REWARD_PER_UNIT,
+      rewardDurationMonths: REFERRAL_REWARD_MONTHS,
       stats: {
-        total: referrals.length,
-        rewarded: referrals.filter((r) => r.status === "rewarded").length,
-        paid: referrals.reduce((s, r) => s + r.commission, 0),
+        total: normalizedReferrals.length,
+        active: normalizedReferrals.filter((r) => r.status === "active").length,
+        rewarded: normalizedReferrals.filter((r) => r.commission > 0).length,
+        paid: normalizedReferrals.reduce((sum, item) => sum + item.commission, 0),
       },
-      referrals,
+      referrals: normalizedReferrals,
     },
   });
 };

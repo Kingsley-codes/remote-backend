@@ -124,7 +124,17 @@ export const verifySignupOtp = async (req: Request, res: Response) => {
     if (await User.exists({ email: email.trim().toLowerCase() })) return res.status(409).json({ status: "fail", message: "An account already exists with this email" });
     const referrer = referralCode ? await User.findOne({ farmerID: referralCode }) : null;
     const newUser = await User.create({ email: email.trim().toLowerCase(), password, firstName, lastName, farmerID: generateUSerID(), referredBy: referrer?._id, isVerified: true });
-    if (referrer) await Referral.create({ referrer: referrer._id, referredUser: newUser._id, referralCode: referrer.farmerID });
+    if (referrer) {
+      const expiresAt = new Date();
+      expiresAt.setUTCFullYear(expiresAt.getUTCFullYear() + 1);
+      await Referral.create({
+        referrer: referrer._id,
+        referredUser: newUser._id,
+        referralCode: referrer.farmerID,
+        status: "active",
+        expiresAt,
+      });
+    }
     return res.status(201).json({ status: "success", message: "Email verified and account created" });
   } catch (err: any) {
     logError("auth.signup_verification_failed", err);

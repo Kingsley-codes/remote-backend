@@ -57,6 +57,10 @@ const transactionSchema = new Schema(
       type: Schema.Types.ObjectId,
       ref: "User",
     },
+    referralRewardInvestment: {
+      type: Schema.Types.ObjectId,
+      ref: "Investment",
+    },
     transactionRef: {
       type: String,
       index: true,
@@ -94,6 +98,17 @@ const transactionSchema = new Schema(
     },
   },
   { timestamps: true },
+);
+
+transactionSchema.index(
+  { referralRewardInvestment: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      transactionType: "referral-reward",
+      referralRewardInvestment: { $exists: true },
+    },
+  },
 );
 
 export type Transaction = InferSchemaType<typeof transactionSchema>;
