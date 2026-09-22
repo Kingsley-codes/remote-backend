@@ -65,13 +65,20 @@ const handleWalletPayment = async (
   try {
     session.startTransaction();
     const produce = await Produce.findOneAndUpdate(
-      { _id: produceId, status: "active", remainingUnit: { $gte: units }, minimumUnit: { $lte: units }, "tracks._id": trackId },
+      {
+        _id: produceId,
+        status: { $nin: ['suspended', 'sold out'] },
+        remainingUnit: { $gte: units },
+        minimumUnit: { $lte: units },
+        tracks: { $elemMatch: { _id: trackId, status: { $ne: 'closed' } } },
+      },
       { $inc: { remainingUnit: -units } },
       { new: true, session },
     );
     if (!produce) throw new Error("OPPORTUNITY_UNAVAILABLE");
     const track = produce.tracks.find((item) => String(item._id) === trackId);
-    if (!track) throw new Error("TRACK_NOT_FOUND");
+    if (!track) throw new Error('TRACK_NOT_FOUND');
+    if (track.status === 'closed') throw new Error('TRACK_CLOSED');
 
     let rolloverSource = null;
     if (rolloverInvestmentId) {
@@ -245,7 +252,6 @@ export const initializePayment = async (req: Request, res: Response) => {
       amount,
       units,
       trackId,
-      acknowledgeClosedTrack,
       rolloverInvestmentId,
     } = req.body;
     let userId = req.user?.toString();
@@ -332,18 +338,12 @@ export const initializePayment = async (req: Request, res: Response) => {
     }
 
     const track = produce.tracks.find((item) => String(item._id) === String(trackId));
-    if (!track) return res.status(404).json({ success: false, message: "Track not found" });
-    const schedule = getTrackSchedule(track.startMonth, produce.duration);
-    if (schedule.isClosedForCurrentYear && acknowledgeClosedTrack !== true) {
-      return res.status(409).json({
-        success: false,
-        code: "TRACK_CLOSED_FOR_YEAR",
-        message: `${track.name} is closed for this year. If you continue, your farm will start next year.`,
-        requiresAcknowledgement: true,
-        data: { trackId: String(track._id), startsAt: schedule.startDate, endsAt: schedule.endDate },
-      });
+    if (!track) return res.status(404).json({ success: false, message: 'Track not found' });
+    if (track.status === 'closed') {
+      return res.status(409).json({ success: false, code: 'TRACK_CLOSED', message: 'This track is closed to new investments' });
     }
-    if (produce.status !== "active") {
+    const schedule = getTrackSchedule(track.startMonth, produce.duration);
+    if (produce.status === 'suspended' || produce.status === 'sold out') {
       return res.status(409).json({ success: false, message: "This opportunity is closed to new investments" });
     }
 

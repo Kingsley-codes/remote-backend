@@ -5,6 +5,7 @@ export interface TrackInput {
   startMonth: number;
   endMonth: number;
   stage?: string;
+  status?: 'active' | 'closed';
 }
 
 export const monthNames = [
@@ -25,6 +26,7 @@ export function parseTracks(value: unknown): TrackInput[] {
     name: typeof item?.name === "string" ? item.name.trim() : undefined,
     startMonth: Number(item?.startMonth),
     endMonth: Number(item?.endMonth),
+    status: item?.status === 'closed' ? 'closed' : 'active',
     stage: typeof item?.stage === "string" ? item.stage : undefined,
   }));
 }
@@ -48,6 +50,7 @@ export function validateTracks(input: TrackInput[], duration: number, category: 
       name: track.name || `${monthNames[track.startMonth - 1]}-${monthNames[track.endMonth - 1]}`,
       startMonth: track.startMonth,
       endMonth: track.endMonth,
+      status: track.status === 'closed' ? 'closed' : 'active',
       stage: normalizeStage(track.stage || "preparation", category),
     };
   });

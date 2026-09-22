@@ -10,7 +10,7 @@ import {
   suspendProduce,
   updateProduceStage,
   updateTrackStage,
-  updateProduceStatus,
+  updateTrackStatus,
 } from "../controllers/adminProduceControllers.js";
 import { adminAuthenticate } from "../middleware/authenticationMiddleware.js";
 import {
@@ -40,11 +40,6 @@ adminProduceRouter.post(
   activateProduce,
 );
 adminProduceRouter.patch(
-  "/:produceID/status",
-  adminAuthenticate,
-  updateProduceStatus,
-);
-adminProduceRouter.patch(
   "/:produceID/stage",
   adminAuthenticate,
   updateProduceStage,
@@ -63,6 +58,11 @@ adminProduceRouter.patch(
   "/:produceID/tracks/:trackID/stage",
   adminAuthenticate,
   updateTrackStage,
+);
+adminProduceRouter.patch(
+  '/:produceID/tracks/:trackID/status',
+  adminAuthenticate,
+  updateTrackStatus,
 );
 adminProduceRouter.post(
   "/suspend/:produceId",

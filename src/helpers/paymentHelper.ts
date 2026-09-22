@@ -64,7 +64,12 @@ export const handleChargeSuccess = async (
       if (!Number.isSafeInteger(units) || units <= 0) throw new Error("Invalid settled unit count");
 
       const produce = await Produce.findOneAndUpdate(
-        { _id: settledPayment.produce, remainingUnit: { $gte: units }, "tracks._id": settledPayment.trackId },
+        {
+          _id: settledPayment.produce,
+          status: { $nin: ['suspended', 'sold out'] },
+          remainingUnit: { $gte: units },
+          tracks: { $elemMatch: { _id: settledPayment.trackId, status: { $ne: 'closed' } } },
+        },
         { $inc: { remainingUnit: -units } },
         { new: true, session },
       );

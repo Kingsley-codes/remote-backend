@@ -6,6 +6,12 @@ const trackSchema = new Schema(
     startMonth: { type: Number, required: true, min: 1, max: 12 },
     endMonth: { type: Number, required: true, min: 1, max: 12 },
     stage: { type: String, enum: productionStages, required: true },
+    status: {
+      type: String,
+      enum: ['active', 'closed'],
+      default: 'active',
+      required: true,
+    },
   },
   { _id: true },
 );

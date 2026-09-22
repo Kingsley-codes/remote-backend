@@ -216,23 +216,31 @@ export const editProduce = async (
       produceName,
       title,
       totalUnit,
+      minimumUnit,
+      duration,
+      profit,
+      rolloverProfit,
+      isFeatured,
       description,
       price,
       category,
     } = req.body;
     const produceId = req.params.produceId ?? bodyProduceId;
 
-    if (!req.files || Array.isArray(req.files)) {
+    if (Array.isArray(req.files)) {
       return res.status(400).json({
         message: "Invalid file upload format",
       });
     }
 
-    const image1file = req.files.image1?.[0];
-    const image2file = req.files.image2?.[0];
-    const image3file = req.files.image3?.[0];
+    const files = req.files ?? {};
+    const image1file = files.image1?.[0];
+    const image2file = files.image2?.[0];
+    const image3file = files.image3?.[0];
 
-    const existingProduce = await Produce.findOne({ title, _id: { $ne: produceId } });
+    const existingProduce = title
+      ? await Produce.findOne({ title, _id: { $ne: produceId } })
+      : null;
     if (existingProduce) {
       return res.status(400).json({
         message: "Produce with this title already exists",
@@ -253,16 +261,68 @@ export const editProduce = async (
       });
     }
 
+    const numericFields = {
+      totalUnit: totalUnit === undefined ? updatedProduce.totalUnit : Number(totalUnit),
+      minimumUnit: minimumUnit === undefined ? updatedProduce.minimumUnit : Number(minimumUnit),
+      duration: duration === undefined ? updatedProduce.duration : Number(duration),
+      price: price === undefined ? updatedProduce.price : Number(price),
+      profit: profit === undefined ? updatedProduce.profit : Number(profit),
+      rolloverProfit: rolloverProfit === undefined ? updatedProduce.rolloverProfit : Number(rolloverProfit),
+    };
+    if (
+      !Number.isSafeInteger(numericFields.totalUnit) || numericFields.totalUnit < 1 ||
+      !Number.isSafeInteger(numericFields.minimumUnit) || numericFields.minimumUnit < 1 ||
+      !Number.isSafeInteger(numericFields.duration) || numericFields.duration < 1 || numericFields.duration > 12 ||
+      !Number.isFinite(numericFields.price) || numericFields.price <= 0 ||
+      !Number.isFinite(numericFields.profit) || numericFields.profit < 0 ||
+      !Number.isFinite(numericFields.rolloverProfit) || numericFields.rolloverProfit < 0
+    ) {
+      return res.status(400).json({ message: 'Produce values are invalid' });
+    }
+    const soldUnits = updatedProduce.totalUnit - updatedProduce.remainingUnit;
+    if (numericFields.totalUnit < soldUnits) {
+      return res.status(409).json({ message: 'Total units cannot be lower than units already sold' });
+    }
+    if (numericFields.minimumUnit > numericFields.totalUnit - soldUnits) {
+      return res.status(400).json({ message: 'Minimum units cannot exceed the remaining units' });
+    }
+    try {
+      validateTracks(
+        updatedProduce.tracks.map((track) => ({
+          name: track.name,
+          startMonth: track.startMonth,
+          endMonth: track.endMonth,
+          stage: track.stage,
+          status: track.status,
+        })),
+        numericFields.duration,
+        (category ?? updatedProduce.category) as FarmCategory,
+      );
+    } catch (error) {
+      return res.status(400).json({ message: (error as Error).message });
+    }
+
     if (produceName) updatedProduce.produceName = produceName;
     if (title) updatedProduce.title = title;
-    if (totalUnit) updatedProduce.totalUnit = totalUnit;
+    updatedProduce.remainingUnit = numericFields.totalUnit - soldUnits;
+    updatedProduce.totalUnit = numericFields.totalUnit;
+    updatedProduce.minimumUnit = numericFields.minimumUnit;
+    updatedProduce.duration = numericFields.duration;
+    updatedProduce.price = numericFields.price;
+    updatedProduce.profit = numericFields.profit;
+    updatedProduce.rolloverProfit = numericFields.rolloverProfit;
+    if (isFeatured !== undefined) {
+      updatedProduce.isFeatured = isFeatured === true || String(isFeatured) === 'true';
+    }
     if (description) updatedProduce.description = description;
-    if (price) updatedProduce.price = price;
     if (category && category !== updatedProduce.category) {
       if (await Investment.exists({ produce: produceId })) {
         return res.status(409).json({ message: "Category cannot change after investments have been created" });
       }
       updatedProduce.category = category;
+      for (const track of updatedProduce.tracks) {
+        track.stage = normalizeStage(track.stage, category);
+      }
       updatedProduce.stage = category === "aquaculture" ? "pond-preparation" : "preparation";
     }
     updatedProduce.stage = normalizeStage(updatedProduce.stage, updatedProduce.category);
@@ -570,6 +630,37 @@ export const updateTrackStage = async (req: Request, res: Response) => {
   }
 };
 
+export const updateTrackStatus = async (req: Request, res: Response) => {
+  try {
+    const produceID = String(req.params.produceID);
+    const trackID = String(req.params.trackID);
+    const status = String(req.body.status ?? '');
+    if (status !== 'active' && status !== 'closed') {
+      return res.status(400).json({ success: false, message: 'Status must be active or closed' });
+    }
+
+    const produce = await Produce.findById(produceID);
+    if (!produce) {
+      return res.status(404).json({ success: false, message: 'Produce not found' });
+    }
+    const track = produce.tracks.find((item) => String(item._id) === trackID);
+    if (!track) {
+      return res.status(404).json({ success: false, message: 'Track not found' });
+    }
+
+    track.status = status;
+    await produce.save();
+    return res.json({
+      success: true,
+      message: status === 'closed' ? 'Track closed to new investments' : 'Track opened for investment',
+      data: { track },
+    });
+  } catch (error) {
+    logError('admin.track_status_update_failed', error);
+    return res.status(500).json({ success: false, message: 'Unable to update track status' });
+  }
+};
+
 export const addProduceTrack = async (req: Request, res: Response) => {
   try {
     const produceID = String(req.params.produceID);
@@ -664,14 +755,4 @@ export const deleteProduceTrack = async (req: Request, res: Response) => {
     logError("admin.track_delete_failed", error);
     return res.status(500).json({ success: false, message: "Unable to delete track" });
   }
-};
-
-export const updateProduceStatus = async (req: Request, res: Response) => {
-  const { status } = req.body;
-  if (status !== "active" && status !== "closed") {
-    return res.status(400).json({ success: false, message: "Status must be active or closed" });
-  }
-  const produce = await Produce.findByIdAndUpdate(req.params.produceID, { status }, { new: true, runValidators: true });
-  if (!produce) return res.status(404).json({ success: false, message: "Produce not found" });
-  return res.json({ success: true, produce });
 };

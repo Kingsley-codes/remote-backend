@@ -2,11 +2,16 @@ import { Request, Response } from "express";
 import Produce from "../models/produceModel.js";
 import { logError } from "../utils/logger.js";
 
+const withoutClosedTracks = <T extends { tracks?: Array<{ status?: string }> }>(produce: T) => ({
+  ...produce,
+  tracks: (produce.tracks ?? []).filter((track) => track.status !== 'closed'),
+});
+
 export const getAllProduce = async (req: Request, res: Response) => {
   try {
     const { isFeatured } = req.query;
 
-    const filter: any = { status: "active", remainingUnit: { $gt: 0 } };
+    const filter: any = { status: { $nin: ['suspended', 'sold out'] }, remainingUnit: { $gt: 0 }, tracks: { $elemMatch: { status: { $ne: 'closed' } } } };
 
     // only apply filter if it was sent
     if (typeof isFeatured === "string") {
@@ -17,11 +22,12 @@ export const getAllProduce = async (req: Request, res: Response) => {
 
     // Calculate percentage remaining for each produce and add it to the response
     const produceWithPercentage = produceList.map((produce) => {
+      const publicProduce = withoutClosedTracks(produce.toObject());
       const remainingPercentage =
         (produce.remainingUnit / produce.totalUnit) * 100;
 
       return {
-        ...produce.toObject(),
+        ...publicProduce,
         remainingPercentage: Math.round(remainingPercentage * 10) / 10, // Round to 1 decimal place
         // Or use toFixed(1) if you want string: remainingPercentage.toFixed(1)
       };
@@ -47,7 +53,12 @@ export const fetchSingleProduce = async (
 ) => {
   try {
     const { produceId } = req.params;
-    const produceItem = await Produce.findById(produceId);
+    const produceItem = await Produce.findOne({
+      _id: produceId,
+      status: { $nin: ['suspended', 'sold out'] },
+      remainingUnit: { $gt: 0 },
+      tracks: { $elemMatch: { status: { $ne: 'closed' } } },
+    });
 
     if (!produceItem) {
       return res.status(404).json({
@@ -55,7 +66,7 @@ export const fetchSingleProduce = async (
       });
     }
     return res.status(200).json({
-      produce: produceItem,
+      produce: withoutClosedTracks(produceItem.toObject()),
     });
   } catch (error: any) {
     logError("produce.fetch_failed", error, { produceId: req.params.produceId });
