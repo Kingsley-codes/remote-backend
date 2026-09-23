@@ -45,6 +45,8 @@ const transactionSchema = new Schema(
       type: Number,
       required: true,
     },
+    referralBonus: { type: Number, min: 0 },
+    settlementNote: { type: String },
     units: {
       type: Number,
       min: 1,

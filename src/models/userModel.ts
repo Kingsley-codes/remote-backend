@@ -38,7 +38,7 @@ const userSchema = new Schema(
       type: String,
       sparse: true,
       trim: true,
-      validator: function (value: string) {
+      validate: function (value: string) {
         // Allow empty phone numbers (since sparse: true)
         if (!value) return true;
         return validator.isMobilePhone(value, "any");

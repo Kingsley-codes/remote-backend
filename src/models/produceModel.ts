@@ -39,6 +39,8 @@ const produceSchema = new Schema(
       type: Number,
       required: true,
     },
+    maximumUnit: { type: Number, min: 1, validate: Number.isSafeInteger },
+    referralBonus: { type: Number, min: 0, default: 50 },
     minimumUnit: {
       type: Number,
       required: true,
@@ -105,6 +107,9 @@ const produceSchema = new Schema(
     },
     duration: {
       type: Number,
+      min: 2,
+      max: 60,
+      validate: Number.isSafeInteger,
       required: true,
     },
     profit: { type: Number, required: true, min: 0 },

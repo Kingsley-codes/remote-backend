@@ -1,10 +1,10 @@
 import type { ClientSession } from "mongoose";
+import User from "../models/userModel.js";
 import Investment from "../models/investmentModel.js";
 import Referral from "../models/referralModel.js";
 import Transaction from "../models/transactionModel.js";
 import Wallet from "../models/walletModel.js";
 
-export const REFERRAL_REWARD_PER_UNIT = 50;
 export const REFERRAL_REWARD_MONTHS = 12;
 
 export function getReferralExpiry(createdAt: Date) {
@@ -21,7 +21,9 @@ export async function awardReferralCommission(
   const referral = await Referral.findOne({ referredUser: userId }).session(session ?? null);
   if (!referral) return;
 
-  const expiresAt = referral.expiresAt ?? getReferralExpiry(referral.createdAt);
+  const referee = await User.findById(userId).select("createdAt").session(session ?? null);
+  if (!referee) return;
+  const expiresAt = getReferralExpiry(referee.createdAt);
   const now = new Date();
   if (now >= expiresAt || referral.status === "expired") {
     await Referral.updateOne(
@@ -37,7 +39,7 @@ export async function awardReferralCommission(
     user: userId,
     orderStatus: "confirmed",
   })
-    .select("units")
+    .select("units referralBonus")
     .session(session ?? null);
   if (!investment) return;
 
@@ -47,7 +49,9 @@ export async function awardReferralCommission(
   }).session(session ?? null);
   if (alreadyRewarded) return;
 
-  const reward = investment.units * REFERRAL_REWARD_PER_UNIT;
+  const reward = Math.round(investment.units * (investment.referralBonus ?? 50) * 100) / 100;
+
+  if (reward <= 0) return;
 
   await Transaction.create(
     [{
@@ -58,6 +62,7 @@ export async function awardReferralCommission(
       transactionID: `REF-${investment._id.toString()}`,
       amount: reward,
       units: investment.units,
+      referralBonus: investment.referralBonus ?? 50,
       paymentMethod: "wallet",
       status: "completed",
       date: now,

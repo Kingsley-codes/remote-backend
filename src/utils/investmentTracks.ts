@@ -32,15 +32,15 @@ export function parseTracks(value: unknown): TrackInput[] {
 }
 
 export function validateTracks(input: TrackInput[], duration: number, category: FarmCategory) {
-  if (!Number.isSafeInteger(duration) || duration < 1 || duration > 12) {
-    throw new Error("Duration must be a whole number between 1 and 12 months");
+  if (!Number.isSafeInteger(duration) || duration < 2 || duration > 60) {
+    throw new Error("Duration must be a whole number between 2 and 60 months");
   }
   const seen = new Set<string>();
   return input.map((track) => {
     if (!Number.isSafeInteger(track.startMonth) || track.startMonth < 1 || track.startMonth > 12 || !Number.isSafeInteger(track.endMonth) || track.endMonth < 1 || track.endMonth > 12) {
       throw new Error("Track months must be whole numbers between 1 and 12");
     }
-    if (trackMonthCount(track.startMonth, track.endMonth) !== duration) {
+    if (trackMonthCount(track.startMonth, track.endMonth) !== ((duration - 1) % 12) + 1) {
       throw new Error(`Every track must span exactly ${duration} month${duration === 1 ? "" : "s"}`);
     }
     const key = `${track.startMonth}-${track.endMonth}`;

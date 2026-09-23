@@ -94,6 +94,7 @@ const investmentSchema = new Schema(
       type: Number,
       required: true,
     },
+    referralBonus: { type: Number, min: 0 },
     profit: { type: Number, required: true },
     track: {
       id: { type: Schema.Types.ObjectId, required: true },

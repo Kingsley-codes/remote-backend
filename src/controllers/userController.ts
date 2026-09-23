@@ -1,5 +1,7 @@
 import { Request, Response } from "express";
 import User from "../models/userModel.js";
+import { uploadToCloudinary, deleteFromCloudinary } from "../middleware/uploadMiddleware.js";
+import validator from "validator";
 import Wallet from "../models/walletModel.js";
 import { logError } from "../utils/logger.js";
 
@@ -53,8 +55,26 @@ export const updateUserProfile = async (req: Request, res: Response) => {
     };
     if (!updates.firstName || !updates.lastName) return res.status(400).json({ success: false, message: "First and last name are required" });
 
-    const user = await User.findByIdAndUpdate(userId, updates, { new: true, runValidators: true }).select("-password");
+    if (updates.firstName.length > 80 || updates.lastName.length > 80 || updates.address.length > 500 || (updates.phone && !validator.isMobilePhone(updates.phone, "any"))) {
+      return res.status(400).json({ success: false, message: "Use names up to 80 characters, an address up to 500 characters and a valid phone number." });
+    }
+    if (req.body.gender !== undefined && !["", "male", "female"].includes(req.body.gender)) {
+      return res.status(400).json({ success: false, message: "Invalid gender" });
+    }
+    const user = await User.findById(userId);
     if (!user) return res.status(404).json({ success: false, message: "User not found" });
+    user.set(updates);
+    await user.validate();
+    const file = !Array.isArray(req.files) ? req.files?.profilePhoto?.[0] : undefined;
+    const oldPhoto = user.profilePhoto?.publicId;
+    const photo = file ? await uploadToCloudinary(file, "AgroFund Hub/profile_images") : undefined;
+    if (photo) user.profilePhoto = { publicId: photo.public_id, url: photo.secure_url };
+    try { await user.save(); }
+    catch (error) {
+      if (photo) await deleteFromCloudinary(photo.public_id).catch(() => {});
+      throw error;
+    }
+    if (photo && oldPhoto) await deleteFromCloudinary(oldPhoto).catch(() => {});
     return res.json({ success: true, data: { user } });
   } catch (error) {
     logError("user.profile_update_failed", error, { userId: req.user?.toString() });

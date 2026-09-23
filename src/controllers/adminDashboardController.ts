@@ -253,6 +253,9 @@ export const getAllUsers = async (
       {
         $project: {
           password: 0,
+          sessionVersion: 0,
+          googleId: 0,
+          oauthProviders: 0,
           "wallet.user": 0,
           "wallet.__v": 0,
         },

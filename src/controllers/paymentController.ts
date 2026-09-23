@@ -70,6 +70,7 @@ const handleWalletPayment = async (
         status: { $nin: ['suspended', 'sold out'] },
         remainingUnit: { $gte: units },
         minimumUnit: { $lte: units },
+        $or: [{ maximumUnit: { $gte: units } }, { maximumUnit: { $exists: false } }],
         tracks: { $elemMatch: { _id: trackId, status: { $ne: 'closed' } } },
       },
       { $inc: { remainingUnit: -units } },
@@ -80,6 +81,11 @@ const handleWalletPayment = async (
     if (!track) throw new Error('TRACK_NOT_FOUND');
     if (track.status === 'closed') throw new Error('TRACK_CLOSED');
 
+    // The produce write above serializes competing purchases before this check.
+    if (await Investment.exists({ user: userId, produce: produceId, "track.id": trackId, orderStatus: { $ne: "cancelled" } }).session(session)) {
+      throw new Error("TRACK_ALREADY_INVESTED");
+    }
+    if (Math.round(produce.price * units * 100) !== Math.round(amount * 100)) throw new Error("OPPORTUNITY_UNAVAILABLE");
     let rolloverSource = null;
     if (rolloverInvestmentId) {
       rolloverSource = await Investment.findOne({
@@ -132,6 +138,7 @@ const handleWalletPayment = async (
       orderStatus: "confirmed",
       customerEmail: email,
       duration: produce.duration,
+      referralBonus: produce.referralBonus ?? 50,
       profit: rolloverSource ? produce.rolloverProfit : produce.profit,
       stage: normalizeStage(track.stage, produce.category),
       track: { id: track._id, name: track.name, startMonth: track.startMonth, endMonth: track.endMonth },
@@ -347,10 +354,13 @@ export const initializePayment = async (req: Request, res: Response) => {
       return res.status(409).json({ success: false, message: "This opportunity is closed to new investments" });
     }
 
-    if (numericUnits < produce.minimumUnit || numericUnits > produce.remainingUnit) {
+    if (numericUnits < produce.minimumUnit || numericUnits > Math.min(produce.remainingUnit, produce.maximumUnit ?? produce.totalUnit)) {
       return res.status(400).json({ success: false, message: "Requested units are not available" });
     }
 
+    if (await Investment.exists({ user: finalUserId, produce: produceId, "track.id": trackId, orderStatus: { $ne: "cancelled" } })) {
+      return res.status(409).json({ success: false, message: "You already have an investment in this track. Please select another track." });
+    }
     const expectedAmount = produce.price * numericUnits;
 
     if (numericAmount !== expectedAmount) {
@@ -401,6 +411,7 @@ export const initializePayment = async (req: Request, res: Response) => {
           INSUFFICIENT_WALLET_BALANCE: "Insufficient Agro Wallet balance",
           ROLLOVER_NOT_ELIGIBLE: "This investment is not eligible for rollover",
           OPPORTUNITY_UNAVAILABLE: "This opportunity is closed or the requested units are unavailable",
+          TRACK_ALREADY_INVESTED: "You already have an investment in this track. Please select another track.",
           TRACK_NOT_FOUND: "Track not found",
         };
         const message = messages[error?.message];
@@ -432,6 +443,7 @@ export const initializePayment = async (req: Request, res: Response) => {
           endsAt: schedule.endDate,
           amount: numericAmount,
           units: numericUnits,
+          referralBonus: produce.referralBonus ?? 50,
           paymentMethod,
           transactionRef: reference,
           idempotencyKey,
@@ -591,6 +603,9 @@ export const verifyPayment = async (
     if (transactionData.status === "success") {
       const result = await handleChargeSuccess(transactionData);
       const settledPayment = result.payment;
+      if (settledPayment?.status === "refunded") {
+        return res.status(409).json({ success: false, message: settledPayment.settlementNote, status: "refunded" });
+      }
       if (!settledPayment || !result.investment) {
         throw new Error("Payment settlement did not complete");
       }

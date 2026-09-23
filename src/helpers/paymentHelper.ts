@@ -60,9 +60,28 @@ export const handleChargeSuccess = async (
         return;
       }
 
+      if (settledPayment.status === "refunded") return;
+
       const units = settledPayment.units ?? Number(eventData.metadata?.units);
       if (!Number.isSafeInteger(units) || units <= 0) throw new Error("Invalid settled unit count");
 
+      // Lock the produce before checking ownership, including wallet/card races.
+      const lockedProduce = await Produce.findOneAndUpdate(
+        { _id: settledPayment.produce }, { $inc: { __v: 1 } }, { new: true, session },
+      );
+      const duplicate = await Investment.exists({ user: settledPayment.user, produce: settledPayment.produce, "track.id": settledPayment.trackId, orderStatus: { $ne: "cancelled" } }).session(session);
+      if (duplicate || !lockedProduce || units < lockedProduce.minimumUnit || units > (lockedProduce.maximumUnit ?? lockedProduce.totalUnit) || units > lockedProduce.remainingUnit ||
+          ['suspended', 'sold out'].includes(lockedProduce.status) || !lockedProduce.tracks.some(t => String(t._id) === String(settledPayment.trackId) && t.status !== 'closed')) {
+        // A provider charge cannot be undone here. Return its full value to the wallet atomically.
+        await Wallet.findOneAndUpdate({ user: settledPayment.user }, {
+          $inc: { balance: settledPayment.amount },
+          $setOnInsert: { walletId: `WAL-${settledPayment.user.toString().slice(-8).toUpperCase()}`, currency: 'NGN' },
+        }, { upsert: true, session });
+        settledPayment.status = 'refunded';
+        settledPayment.settlementNote = 'This track is already owned or no longer available for these units. Your full payment has been credited to your wallet.';
+        await settledPayment.save({ session });
+        return;
+      }
       const produce = await Produce.findOneAndUpdate(
         {
           _id: settledPayment.produce,
@@ -89,6 +108,7 @@ export const handleChargeSuccess = async (
         orderStatus: "confirmed",
         transactionRef: settledPayment.transactionRef,
         duration: produce.duration,
+        referralBonus: settledPayment.referralBonus ?? produce.referralBonus ?? 50,
         profit: produce.profit,
         stage: normalizeStage(track.stage, produce.category),
         track: { id: track._id, name: track.name, startMonth: track.startMonth, endMonth: track.endMonth },

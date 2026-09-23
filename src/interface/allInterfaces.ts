@@ -38,6 +38,8 @@ export interface ProduceRequestBody {
   totalUnit?: number;
   duration?: number;
   minimumUnit?: number;
+  maximumUnit?: number;
+  referralBonus?: number;
   profit?: number;
   rolloverProfit?: number;
   tracks?: Array<{ name?: string; startMonth: number; endMonth: number; stage?: string }> | string;

@@ -1,5 +1,5 @@
 import { stagesByCategory, normalizeStage, type FarmCategory } from "../utils/productionStages.js";
-import { parseTracks, validateTracks } from "../utils/investmentTracks.js";
+import { parseTracks, validateTracks, monthNames } from "../utils/investmentTracks.js";
 import { Request, Response } from "express";
 import { logError } from "../utils/logger.js";
 import Produce from "../models/produceModel.js";
@@ -35,6 +35,8 @@ export const createProduce = async (
       totalUnit,
       duration,
       minimumUnit,
+      maximumUnit,
+      referralBonus,
       description,
       price,
       category,
@@ -61,6 +63,15 @@ export const createProduce = async (
       });
     }
 
+    if (!Number.isSafeInteger(Number(totalUnit)) || Number(totalUnit) < 1 ||
+        !Number.isSafeInteger(Number(minimumUnit)) || Number(minimumUnit) < 1 ||
+        !Number.isSafeInteger(Number(maximumUnit)) || Number(maximumUnit) < Number(minimumUnit) || Number(maximumUnit) > Number(totalUnit) ||
+        referralBonus === undefined || String(referralBonus).trim() === '' || !Number.isFinite(Number(referralBonus)) || Number(referralBonus) < 0 ||
+        !Number.isFinite(Number(price)) || Number(price) <= 0 ||
+        !Number.isFinite(Number(profit)) || Number(profit) < 0 ||
+        !Number.isFinite(Number(rolloverProfit)) || Number(rolloverProfit) < 0) {
+      return res.status(400).json({ message: "Check the unit limits, price, profit and referral bonus. Maximum units must be between minimum and total units." });
+    }
     let validatedTracks;
     try {
       validatedTracks = validateTracks(
@@ -103,6 +114,8 @@ export const createProduce = async (
       title,
       totalUnit,
       minimumUnit,
+      maximumUnit,
+      referralBonus,
       description,
       price,
       isFeatured,
@@ -217,6 +230,8 @@ export const editProduce = async (
       title,
       totalUnit,
       minimumUnit,
+      maximumUnit,
+      referralBonus,
       duration,
       profit,
       rolloverProfit,
@@ -264,6 +279,8 @@ export const editProduce = async (
     const numericFields = {
       totalUnit: totalUnit === undefined ? updatedProduce.totalUnit : Number(totalUnit),
       minimumUnit: minimumUnit === undefined ? updatedProduce.minimumUnit : Number(minimumUnit),
+      maximumUnit: maximumUnit === undefined ? (updatedProduce.maximumUnit ?? updatedProduce.totalUnit) : Number(maximumUnit),
+      referralBonus: referralBonus === undefined ? (updatedProduce.referralBonus ?? 50) : Number(referralBonus),
       duration: duration === undefined ? updatedProduce.duration : Number(duration),
       price: price === undefined ? updatedProduce.price : Number(price),
       profit: profit === undefined ? updatedProduce.profit : Number(profit),
@@ -272,7 +289,9 @@ export const editProduce = async (
     if (
       !Number.isSafeInteger(numericFields.totalUnit) || numericFields.totalUnit < 1 ||
       !Number.isSafeInteger(numericFields.minimumUnit) || numericFields.minimumUnit < 1 ||
-      !Number.isSafeInteger(numericFields.duration) || numericFields.duration < 1 || numericFields.duration > 12 ||
+      !Number.isSafeInteger(numericFields.duration) || numericFields.duration < 2 || numericFields.duration > 60 ||
+      !Number.isSafeInteger(numericFields.maximumUnit) || numericFields.maximumUnit < numericFields.minimumUnit || numericFields.maximumUnit > numericFields.totalUnit ||
+      !Number.isFinite(numericFields.referralBonus) || numericFields.referralBonus < 0 || String(referralBonus).trim() === '' ||
       !Number.isFinite(numericFields.price) || numericFields.price <= 0 ||
       !Number.isFinite(numericFields.profit) || numericFields.profit < 0 ||
       !Number.isFinite(numericFields.rolloverProfit) || numericFields.rolloverProfit < 0
@@ -291,7 +310,7 @@ export const editProduce = async (
         updatedProduce.tracks.map((track) => ({
           name: track.name,
           startMonth: track.startMonth,
-          endMonth: track.endMonth,
+          endMonth: ((track.startMonth + numericFields.duration - 2) % 12) + 1,
           stage: track.stage,
           status: track.status,
         })),
@@ -307,6 +326,14 @@ export const editProduce = async (
     updatedProduce.remainingUnit = numericFields.totalUnit - soldUnits;
     updatedProduce.totalUnit = numericFields.totalUnit;
     updatedProduce.minimumUnit = numericFields.minimumUnit;
+    updatedProduce.maximumUnit = numericFields.maximumUnit;
+    updatedProduce.referralBonus = numericFields.referralBonus;
+    for (const track of updatedProduce.tracks) {
+      const automaticName = `${monthNames[track.startMonth - 1]}-${monthNames[track.endMonth - 1]}`;
+      const renamed = track.name === automaticName;
+      track.endMonth = ((track.startMonth + numericFields.duration - 2) % 12) + 1;
+      if (renamed) track.name = `${monthNames[track.startMonth - 1]}-${monthNames[track.endMonth - 1]}`;
+    }
     updatedProduce.duration = numericFields.duration;
     updatedProduce.price = numericFields.price;
     updatedProduce.profit = numericFields.profit;
