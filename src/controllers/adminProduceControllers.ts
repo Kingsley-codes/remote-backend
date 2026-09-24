@@ -425,8 +425,13 @@ export const getAllProduce = async (req: Request, res: Response) => {
       });
     }
 
-    const produceList = await Produce.find().sort({
+    const { category } = req.query;
+    if (category !== undefined && (typeof category !== "string" || !["crops", "livestock", "aquaculture"].includes(category))) {
+      return res.status(400).json({ status: "error", message: "Invalid category" });
+    }
+    const produceList = await Produce.find(category ? { category } : {}).sort({
       createdAt: -1,
+      _id: -1,
     });
 
     return res.status(200).json({

@@ -46,6 +46,16 @@ export const updateUserProfile = async (req: Request, res: Response) => {
     const userId = req.user;
     if (!userId) return res.status(401).json({ success: false, message: "Unauthorized" });
 
+    const removalFlag = req.body.removeProfilePhoto;
+    if (removalFlag !== undefined && ![true, false, "true", "false"].includes(removalFlag)) {
+      return res.status(400).json({ success: false, message: "Invalid photo removal option" });
+    }
+    const removePhoto = removalFlag === true || removalFlag === "true";
+    const file = !Array.isArray(req.files) ? req.files?.profilePhoto?.[0] : undefined;
+    if (removePhoto && file) {
+      return res.status(400).json({ success: false, message: "Choose either a new photo or photo removal" });
+    }
+
     const updates = {
       firstName: String(req.body.firstName ?? "").trim(),
       lastName: String(req.body.lastName ?? "").trim(),
@@ -65,16 +75,20 @@ export const updateUserProfile = async (req: Request, res: Response) => {
     if (!user) return res.status(404).json({ success: false, message: "User not found" });
     user.set(updates);
     await user.validate();
-    const file = !Array.isArray(req.files) ? req.files?.profilePhoto?.[0] : undefined;
     const oldPhoto = user.profilePhoto?.publicId;
     const photo = file ? await uploadToCloudinary(file, "AgroFund Hub/profile_images") : undefined;
+    if (removePhoto) user.set("profilePhoto", undefined);
     if (photo) user.profilePhoto = { publicId: photo.public_id, url: photo.secure_url };
     try { await user.save(); }
     catch (error) {
       if (photo) await deleteFromCloudinary(photo.public_id).catch(() => {});
       throw error;
     }
-    if (photo && oldPhoto) await deleteFromCloudinary(oldPhoto).catch(() => {});
+    if ((photo || removePhoto) && oldPhoto) {
+      await deleteFromCloudinary(oldPhoto).catch((error) => {
+        logError("user.profile_photo_cleanup_failed", error, { userId: userId.toString() });
+      });
+    }
     return res.json({ success: true, data: { user } });
   } catch (error) {
     logError("user.profile_update_failed", error, { userId: req.user?.toString() });

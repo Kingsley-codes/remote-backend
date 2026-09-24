@@ -224,6 +224,7 @@ export const getAllUsers = async (
         { firstName: { $regex: safeQuery, $options: "i" } },
         { lastName: { $regex: safeQuery, $options: "i" } },
         { email: { $regex: safeQuery, $options: "i" } },
+        { farmerID: { $regex: safeQuery, $options: "i" } },
       ];
     }
 
@@ -261,7 +262,7 @@ export const getAllUsers = async (
         },
       },
 
-      { $sort: { createdAt: -1 } },
+      { $sort: { createdAt: -1, _id: -1 } },
       { $skip: skip },
       { $limit: limit },
     ]);
@@ -272,7 +273,7 @@ export const getAllUsers = async (
       success: true,
       data: users,
       page: pageNumber,
-      pages: Math.ceil(total / limit),
+      pages: Math.max(1, Math.ceil(total / limit)),
     });
   } catch (error: any) {
     logError("admin.users_list_failed", error);
