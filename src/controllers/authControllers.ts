@@ -11,8 +11,14 @@ import { UserJwtPayload } from "../config/passport.js"; // import the interface
 import Referral from "../models/referralModel.js";
 import { consumeEmailOtp, issueEmailOtp } from "../services/otpService.js";
 import { sendOtpEmail } from "../services/emailService.js";
-import { authCookieOptions, signIdentityToken } from "../services/tokenService.js";
-import { consumeOAuthState, issueOAuthState } from "../services/oauthStateService.js";
+import {
+  authCookieOptions,
+  signIdentityToken,
+} from "../services/tokenService.js";
+import {
+  consumeOAuthState,
+  issueOAuthState,
+} from "../services/oauthStateService.js";
 import { writeActorAuditSafely } from "../services/auditService.js";
 import { logError } from "../utils/logger.js";
 
@@ -84,8 +90,13 @@ export const registerUser = async (
       });
     }
 
-    if (referralCode && !(await User.exists({ farmerID: referralCode.trim().toUpperCase() }))) {
-      return res.status(400).json({ status: "fail", message: "Invalid referral code" });
+    if (
+      referralCode &&
+      !(await User.exists({ farmerID: referralCode.trim().toUpperCase() }))
+    ) {
+      return res
+        .status(400)
+        .json({ status: "fail", message: "Invalid referral code" });
     }
 
     const code = await issueEmailOtp({
@@ -117,13 +128,49 @@ export const registerUser = async (
 export const verifySignupOtp = async (req: Request, res: Response) => {
   try {
     const { email, otp } = req.body as { email?: string; otp?: string };
-    if (!email || !otp) return res.status(400).json({ status: "fail", message: "Email and verification code are required" });
-    const payload = await consumeEmailOtp({ email, purpose: "signup", code: otp });
-    if (!payload) return res.status(400).json({ status: "fail", message: "Invalid or expired verification code" });
-    const { firstName, lastName, password, referralCode } = payload as { firstName: string; lastName: string; password: string; referralCode?: string };
-    if (await User.exists({ email: email.trim().toLowerCase() })) return res.status(409).json({ status: "fail", message: "An account already exists with this email" });
-    const referrer = referralCode ? await User.findOne({ farmerID: referralCode }) : null;
-    const newUser = await User.create({ email: email.trim().toLowerCase(), password, firstName, lastName, farmerID: generateUSerID(), referredBy: referrer?._id, isVerified: true });
+
+    if (!email || !otp)
+      return res.status(400).json({
+        status: "fail",
+        message: "Email and verification code are required",
+      });
+
+    const payload = await consumeEmailOtp({
+      email,
+      purpose: "signup",
+      code: otp,
+    });
+
+    if (!payload)
+      return res.status(400).json({
+        status: "fail",
+        message: "Invalid or expired verification code",
+      });
+
+    const { firstName, lastName, password, referralCode } = payload as {
+      firstName: string;
+      lastName: string;
+      password: string;
+      referralCode?: string;
+    };
+
+    if (await User.exists({ email: email.trim().toLowerCase() }))
+      return res.status(409).json({
+        status: "fail",
+        message: "An account already exists with this email",
+      });
+    const referrer = referralCode
+      ? await User.findOne({ farmerID: referralCode })
+      : null;
+    const newUser = await User.create({
+      email: email.trim().toLowerCase(),
+      password,
+      firstName,
+      lastName,
+      farmerID: generateUSerID(),
+      referredBy: referrer?._id,
+      isVerified: true,
+    });
     if (referrer) {
       const expiresAt = new Date();
       expiresAt.setUTCFullYear(expiresAt.getUTCFullYear() + 1);
@@ -135,46 +182,105 @@ export const verifySignupOtp = async (req: Request, res: Response) => {
         expiresAt,
       });
     }
-    return res.status(201).json({ status: "success", message: "Email verified and account created" });
+    return res.status(201).json({
+      status: "success",
+      message: "Email verified and account created",
+    });
   } catch (err: any) {
     logError("auth.signup_verification_failed", err);
-    return res.status(500).json({ status: "error", message: "Unable to verify email" });
+    return res
+      .status(500)
+      .json({ status: "error", message: "Unable to verify email" });
   }
 };
 
 export const requestPasswordReset = async (req: Request, res: Response) => {
   try {
-    const email = String(req.body.email ?? "").trim().toLowerCase();
-    if (!validator.isEmail(email)) return res.status(400).json({ status: "fail", message: "A valid email is required" });
+    const email = String(req.body.email ?? "")
+      .trim()
+      .toLowerCase();
+    if (!validator.isEmail(email))
+      return res
+        .status(400)
+        .json({ status: "fail", message: "A valid email is required" });
     const user = await User.findOne({ email });
     if (user) {
-      const code = await issueEmailOtp({ email, userId: user._id.toString(), purpose: "password-reset" });
+      const code = await issueEmailOtp({
+        email,
+        userId: user._id.toString(),
+        purpose: "password-reset",
+      });
       await sendOtpEmail(email, code, "password-reset");
     }
-    return res.status(200).json({ status: "success", message: "If an account exists, a reset code has been sent" });
+    return res.status(200).json({
+      status: "success",
+      message: "If an account exists, a reset code has been sent",
+    });
   } catch (err) {
     logError("auth.password_reset_request_failed", err);
-    return res.status(503).json({ status: "error", message: "Unable to send reset code" });
+    return res
+      .status(503)
+      .json({ status: "error", message: "Unable to send reset code" });
   }
 };
 
 export const resetPassword = async (req: Request, res: Response) => {
   try {
-    const { email, otp, password, confirmPassword } = req.body as { email?: string; otp?: string; password?: string; confirmPassword?: string };
-    if (!email || !otp || !password || !confirmPassword) return res.status(400).json({ status: "fail", message: "Email, code, and password fields are required" });
-    if (password !== confirmPassword || !validator.isStrongPassword(password, { minLength: 8, minUppercase: 1, minSymbols: 1, minNumbers: 1 })) return res.status(400).json({ status: "fail", message: "Use a strong matching password" });
+    const { email, otp, password, confirmPassword } = req.body as {
+      email?: string;
+      otp?: string;
+      password?: string;
+      confirmPassword?: string;
+    };
+    if (!email || !otp || !password || !confirmPassword)
+      return res.status(400).json({
+        status: "fail",
+        message: "Email, code, and password fields are required",
+      });
+    if (
+      password !== confirmPassword ||
+      !validator.isStrongPassword(password, {
+        minLength: 8,
+        minUppercase: 1,
+        minSymbols: 1,
+        minNumbers: 1,
+      })
+    )
+      return res
+        .status(400)
+        .json({ status: "fail", message: "Use a strong matching password" });
     const user = await User.findOne({ email: email.trim().toLowerCase() });
-    if (!user) return res.status(400).json({ status: "fail", message: "Invalid or expired reset code" });
-    const valid = await consumeEmailOtp({ email, userId: user._id.toString(), purpose: "password-reset", code: otp });
-    if (!valid) return res.status(400).json({ status: "fail", message: "Invalid or expired reset code" });
+    if (!user)
+      return res
+        .status(400)
+        .json({ status: "fail", message: "Invalid or expired reset code" });
+    const valid = await consumeEmailOtp({
+      email,
+      userId: user._id.toString(),
+      purpose: "password-reset",
+      code: otp,
+    });
+    if (!valid)
+      return res
+        .status(400)
+        .json({ status: "fail", message: "Invalid or expired reset code" });
     user.password = await bcrypt.hash(password, 12);
     user.sessionVersion = (user.sessionVersion ?? 0) + 1;
     await user.save();
-    await writeActorAuditSafely(req, { action: "UPDATE", entityType: "USER", entityId: user.id, details: "Password reset; existing sessions revoked" });
-    return res.status(200).json({ status: "success", message: "Password reset successfully" });
+    await writeActorAuditSafely(req, {
+      action: "UPDATE",
+      entityType: "USER",
+      entityId: user.id,
+      details: "Password reset; existing sessions revoked",
+    });
+    return res
+      .status(200)
+      .json({ status: "success", message: "Password reset successfully" });
   } catch (err) {
     logError("auth.password_reset_failed", err);
-    return res.status(500).json({ status: "error", message: "Unable to reset password" });
+    return res
+      .status(500)
+      .json({ status: "error", message: "Unable to reset password" });
   }
 };
 
@@ -193,7 +299,10 @@ export const login = async (
       });
     }
 
-    const user = await User.findOne({ email: email.trim().toLowerCase(), status: "active" }).select("+password");
+    const user = await User.findOne({
+      email: email.trim().toLowerCase(),
+      status: "active",
+    }).select("+password");
 
     // Check if user exists and has a password
     if (!user || !user.password) {
@@ -220,19 +329,35 @@ export const login = async (
       });
     }
 
-    // if (!user.isVerified) {
-    //   return res.status(401).json({
-    //     status: "fail",
-    //     message: "Account not verified"
-    //   });
-    // }
+    if (!user.isVerified || user.isVerified !== true) {
+      return res.status(401).json({
+        status: "fail",
+        message: "Account not verified",
+      });
+    }
 
-    const token = signIdentityToken(user._id.toString(), "user", user.sessionVersion ?? 0);
+    if (user.status !== "active") {
+      return res.status(403).json({
+        status: "fail",
+        message: "Account is not active",
+      });
+    }
+
+    const token = signIdentityToken(
+      user._id.toString(),
+      "user",
+      user.sessionVersion ?? 0,
+    );
     user.password = null;
 
     res.cookie("user_token", token, authCookieOptions());
     req.user = user._id;
-    await writeActorAuditSafely(req, { action: "LOGIN", entityType: "USER", entityId: user.id, details: "Password login" });
+    await writeActorAuditSafely(req, {
+      action: "LOGIN",
+      entityType: "USER",
+      entityId: user.id,
+      details: "Password login",
+    });
 
     return res.status(200).json({
       status: "success",
@@ -251,7 +376,12 @@ export const login = async (
 export const logout = async (req: Request, res: Response) => {
   if (req.user) {
     await User.updateOne({ _id: req.user }, { $inc: { sessionVersion: 1 } });
-    await writeActorAuditSafely(req, { action: "LOGOUT", entityType: "USER", entityId: req.user.toString(), details: "All user sessions revoked" });
+    await writeActorAuditSafely(req, {
+      action: "LOGOUT",
+      entityType: "USER",
+      entityId: req.user.toString(),
+      details: "All user sessions revoked",
+    });
   }
   res.clearCookie("user_token", authCookieOptions());
 
@@ -280,7 +410,9 @@ export const googleAuthCallback = (
   next: NextFunction,
 ) => {
   if (!consumeOAuthState(req, res, "oauth_user_state")) {
-    return res.redirect(`${process.env.FRONTEND_URL}/login?error=invalid_oauth_state`);
+    return res.redirect(
+      `${process.env.FRONTEND_URL}/login?error=invalid_oauth_state`,
+    );
   }
   passport.authenticate(
     "google-user",
@@ -292,17 +424,32 @@ export const googleAuthCallback = (
           `${process.env.FRONTEND_URL}/login?error=oauth_failed`,
         );
 
-      void User.findById(user.id).select("sessionVersion").then(async (record) => {
-        if (!record) return res.redirect(`${process.env.FRONTEND_URL}/login?error=oauth_failed`);
-        const token = signIdentityToken(user.id, "user", record.sessionVersion ?? 0);
-        res.cookie("user_token", token, authCookieOptions());
-        req.user = record._id;
-        await writeActorAuditSafely(req, { action: "LOGIN", entityType: "USER", entityId: user.id, details: "Google OAuth login" });
-        res.redirect(`${process.env.FRONTEND_URL}/dashboard`);
-      }).catch((error) => {
-        logError("auth.oauth_user_callback_failed", error);
-        next(error);
-      });
+      void User.findById(user.id)
+        .select("sessionVersion")
+        .then(async (record) => {
+          if (!record)
+            return res.redirect(
+              `${process.env.FRONTEND_URL}/login?error=oauth_failed`,
+            );
+          const token = signIdentityToken(
+            user.id,
+            "user",
+            record.sessionVersion ?? 0,
+          );
+          res.cookie("user_token", token, authCookieOptions());
+          req.user = record._id;
+          await writeActorAuditSafely(req, {
+            action: "LOGIN",
+            entityType: "USER",
+            entityId: user.id,
+            details: "Google OAuth login",
+          });
+          res.redirect(`${process.env.FRONTEND_URL}/dashboard`);
+        })
+        .catch((error) => {
+          logError("auth.oauth_user_callback_failed", error);
+          next(error);
+        });
     },
   )(req, res, next);
 };
