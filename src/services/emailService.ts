@@ -88,3 +88,24 @@ export const sendAccountStatusEmail = (to: string, name: string, status: "active
 
 export const sendWithdrawalCompletedEmail = (to: string, name: string, amount: number) =>
   deliverEmail({ to, subject: "Your withdrawal is complete", text: `Hi ${name}, your withdrawal of ${formatNaira(amount)} has been completed.`, html: emailShell("Withdrawal complete", `<p>Hi ${escapeHtml(name)},</p><p>Your withdrawal of <strong>${formatNaira(amount)}</strong> has been completed.</p>`) });
+
+export const sendAdminWithdrawalEmail = (to: string, name: string, details: {
+  amount: number; reference: string; reason: string; adminName: string;
+  balanceBefore: number; balanceAfter: number; date: Date;
+}) => {
+  const money = (value: number) => new Intl.NumberFormat("en-NG", { style: "currency", currency: "NGN" }).format(value);
+  const lines = [
+    "Hi " + name + ",",
+    "An admin (" + details.adminName + ") triggered a withdrawal from your Remote Agric wallet.",
+    "Amount deducted: " + money(details.amount),
+    "Reference: " + details.reference,
+    "Date: " + details.date.toISOString(),
+    "Reason: " + details.reason,
+    "Previous balance: " + money(details.balanceBefore),
+    "Remaining balance: " + money(details.balanceAfter),
+    "Status: completed wallet deduction. No bank transfer was initiated by this action.",
+  ];
+  return sendEmail({ to, subject: "Admin-initiated wallet withdrawal", text: lines.join("\n"),
+    html: emailShell("Admin-initiated wallet withdrawal", lines.map(line => "<p>" + escapeHtml(line) + "</p>").join("")),
+  });
+};

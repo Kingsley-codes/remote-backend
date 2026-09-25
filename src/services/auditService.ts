@@ -126,7 +126,7 @@ const actionFromMethod = (method: string): AuditAction =>
 export const auditAdminMutation: RequestHandler = (req, res, next) => {
   if (["GET", "HEAD", "OPTIONS"].includes(req.method)) return next();
   res.on("finish", () => {
-    if (!req.admin || res.statusCode >= 400) return;
+    if (!req.admin || res.statusCode >= 400 || res.locals.auditRecorded) return;
     const bodyId = req.body?.userId ?? req.body?.produceId ?? req.body?.farmerId;
     const pathId = req.originalUrl.split("?")[0]?.split("/").filter(Boolean).at(-1);
     void writeActorAudit(req, {

@@ -21,7 +21,10 @@ import {
 import { adminAuthenticate } from "../middleware/authenticationMiddleware.js";
 import { cleanupUploadedFiles, handleUploadErrors, uploadProducerImages } from "../middleware/uploadMiddleware.js";
 
+import { adminWithdrawBalance } from "../controllers/adminWalletController.js";
+
 const adminDashboardRouter = express.Router();
+adminDashboardRouter.post("/users/:userId/withdraw", adminAuthenticate, adminWithdrawBalance);
 adminDashboardRouter.get("/overview", adminAuthenticate, getDashboardOverview);
 adminDashboardRouter.get('/stats', adminAuthenticate, getDashboardStats);
 

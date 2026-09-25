@@ -47,6 +47,11 @@ const transactionSchema = new Schema(
     },
     referralBonus: { type: Number, min: 0 },
     settlementNote: { type: String },
+    initiatedByAdmin: { type: Schema.Types.ObjectId, ref: "Admin" },
+    adminName: { type: String },
+    walletBalanceBefore: { type: Number },
+    walletBalanceAfter: { type: Number },
+    withdrawalEmailStatus: { type: String, enum: ["pending", "sent", "failed"] },
     units: {
       type: Number,
       min: 1,
