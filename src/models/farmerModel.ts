@@ -23,12 +23,17 @@ const farmerSchema = new Schema({
     required: true,
   },
   farmSize: {
+    // Numeric acreage; retained as a string for compatibility with existing records.
     type: String,
     required: true,
   },
   fundingAmount: {
     type: String,
     required: true,
+  },
+  amountFunded: {
+    type: Number,
+    min: 0,
   },
   cropsGrown: {
     type: [String],
@@ -56,7 +61,7 @@ const farmerSchema = new Schema({
     required: true,
     unique: true,
   },
-});
+}, { timestamps: true });
 
 export type Farmer = InferSchemaType<typeof farmerSchema>;
 export type FarmerDocument = HydratedDocument<Farmer>;

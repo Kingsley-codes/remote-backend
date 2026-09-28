@@ -20,6 +20,7 @@ import { generateReference } from "../helpers/paymentHelper.js";
 import { sendAccountStatusEmail } from "../services/emailService.js";
 import { sendUserEvent } from "../services/sseService.js";
 import { logError } from "../utils/logger.js";
+import { normalizeProducerFundingStatus, positiveNumber, producerFundingUpdate } from "../utils/producerFunding.js";
 
 const safeSearchPattern = (value: unknown) =>
   typeof value === "string"
@@ -1064,6 +1065,10 @@ export const createFarmer = async (req: Request, res: Response) => {
       });
     }
 
+    if (positiveNumber(farmSize) === null || positiveNumber(fundingAmount) === null) {
+      return res.status(400).json({ success: false, message: "Farm size in acres and funding amount must be positive numbers" });
+    }
+
     // Type assertion here
     const file = req.files as { [fieldname: string]: Express.Multer.File[] };
 
@@ -1085,8 +1090,9 @@ export const createFarmer = async (req: Request, res: Response) => {
       town,
       lga,
       state,
-      farmSize,
-      fundingAmount,
+      farmSize: String(Number(farmSize)),
+      fundingAmount: String(Number(fundingAmount)),
+      amountFunded: 0,
       cropsGrown,
       farmerID: generateFarmerID(),
       expectedYield,
@@ -1117,16 +1123,18 @@ export const updateFarmer = async (
     const { farmerId } = req.params;
     const { farmSize, fundingAmount, cropsGrown, expectedYield } = req.body;
 
-    const updatedFarmer = await Farmer.findByIdAndUpdate(
-      { _id: farmerId },
-      {
-        farmSize,
-        fundingAmount,
-        cropsGrown,
-        expectedYield,
-      },
-      { new: true },
-    );
+    if (!mongoose.isObjectIdOrHexString(farmerId)) {
+      return res.status(400).json({ success: false, message: "Invalid producer ID" });
+    }
+    if ((farmSize !== undefined && positiveNumber(farmSize) === null) ||
+        (fundingAmount !== undefined && positiveNumber(fundingAmount) === null)) {
+      return res.status(400).json({ success: false, message: "Farm size in acres and funding amount must be positive numbers" });
+    }
+    if ((cropsGrown !== undefined && (!Array.isArray(cropsGrown) || !cropsGrown.length || cropsGrown.some((crop: unknown) => typeof crop !== "string" || !crop.trim()))) ||
+        (expectedYield !== undefined && (typeof expectedYield !== "string" || !expectedYield.trim()))) {
+      return res.status(400).json({ success: false, message: "Crops and expected yield are required" });
+    }
+    const updatedFarmer = await Farmer.findById(farmerId);
 
     if (!updatedFarmer) {
       return res.status(404).json({
@@ -1134,6 +1142,20 @@ export const updateFarmer = async (
         message: "Producer not found",
       });
     }
+
+    const status = normalizeProducerFundingStatus(updatedFarmer.fundingStatus);
+    if (fundingAmount !== undefined && status === "partially funded" &&
+        updatedFarmer.amountFunded != null && Number(fundingAmount) <= updatedFarmer.amountFunded) {
+      return res.status(400).json({ success: false, message: "Total funding must exceed the amount already funded. Update funding status first." });
+    }
+    if (farmSize !== undefined) updatedFarmer.farmSize = String(Number(farmSize));
+    if (fundingAmount !== undefined) {
+      updatedFarmer.fundingAmount = String(Number(fundingAmount));
+      if (status === "fully funded") updatedFarmer.amountFunded = Number(fundingAmount);
+    }
+    updatedFarmer.set("fundingStatus", status);
+    if (cropsGrown !== undefined) updatedFarmer.cropsGrown = cropsGrown;
+    if (expectedYield !== undefined) updatedFarmer.expectedYield = expectedYield;
 
     // Type assertion here
     const file = (req.files as { profilePhoto?: Express.Multer.File[] })
@@ -1155,10 +1177,8 @@ export const updateFarmer = async (
       };
     }
 
-    return res.status(200).json({
-      success: true,
-      farmer: updatedFarmer,
-    });
+    await updatedFarmer.save();
+    return res.status(200).json({ success: true, farmer: updatedFarmer });
   } catch (error: any) {
     logError("admin.farmer_update_failed", error);
     return res.status(500).json({
@@ -1208,13 +1228,14 @@ export const updateFundingStatus = async (
 ) => {
   try {
     const { farmerId } = req.params;
-    const { fundingStatus } = req.body;
-
-    const updatedFarmer = await Farmer.findByIdAndUpdate(
-      { _id: farmerId },
-      { fundingStatus },
-      { new: true },
-    );
+    const { fundingStatus, amountFunded } = req.body;
+    if (!mongoose.isObjectIdOrHexString(farmerId)) {
+      return res.status(400).json({ success: false, message: "Invalid producer ID" });
+    }
+    if (fundingStatus === undefined || fundingStatus === null) {
+      return res.status(400).json({ success: false, message: "Funding status is required" });
+    }
+    const updatedFarmer = await Farmer.findById(farmerId);
 
     if (!updatedFarmer) {
       return res.status(404).json({
@@ -1222,10 +1243,13 @@ export const updateFundingStatus = async (
       });
     }
 
-    return res.status(200).json({
-      success: true,
-      farmer: updatedFarmer,
-    });
+    try {
+      updatedFarmer.set(producerFundingUpdate(fundingStatus, amountFunded, updatedFarmer.fundingAmount));
+    } catch (error) {
+      return res.status(400).json({ success: false, message: (error as Error).message });
+    }
+    await updatedFarmer.save();
+    return res.status(200).json({ success: true, farmer: updatedFarmer });
   } catch (error: any) {
     logError("admin.farmer_funding_update_failed", error);
     return res.status(500).json({
@@ -1242,10 +1266,14 @@ export const markYieldReceived = async (
   try {
     const { farmerId } = req.params;
 
+    if (!mongoose.isObjectIdOrHexString(farmerId)) {
+      return res.status(400).json({ success: false, message: "Invalid producer ID" });
+    }
+
     const updatedFarmer = await Farmer.findByIdAndUpdate(
-      { _id: farmerId },
+      farmerId,
       { yieldRecieved: true },
-      { new: true },
+      { new: true, runValidators: true },
     );
 
     if (!updatedFarmer) {
