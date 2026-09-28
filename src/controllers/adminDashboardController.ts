@@ -23,7 +23,10 @@ import { logError } from "../utils/logger.js";
 
 const safeSearchPattern = (value: unknown) =>
   typeof value === "string"
-    ? value.trim().slice(0, 100).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+    ? value
+        .trim()
+        .slice(0, 100)
+        .replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
     : "";
 
 type UserQuery = {
@@ -129,7 +132,9 @@ export const getDashboardOverview = async (req: Request, res: Response) => {
     });
   } catch (error: any) {
     logError("admin.dashboard_overview_failed", error);
-    res.status(500).json({ success: false, message: "Unable to load dashboard overview" });
+    res
+      .status(500)
+      .json({ success: false, message: "Unable to load dashboard overview" });
   }
 };
 
@@ -1113,7 +1118,7 @@ export const updateFarmer = async (
     const { farmSize, fundingAmount, cropsGrown, expectedYield } = req.body;
 
     const updatedFarmer = await Farmer.findByIdAndUpdate(
-      { farmerId: farmerId },
+      { _id: farmerId },
       {
         farmSize,
         fundingAmount,
@@ -1169,9 +1174,14 @@ export const deleteFarmer = async (
 ) => {
   try {
     const { farmerId } = req.params;
-    const deletedFarmer = await Farmer.findByIdAndDelete({
-      farmerId: farmerId,
-    });
+    if (!mongoose.isObjectIdOrHexString(farmerId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid producer ID",
+      });
+    }
+
+    const deletedFarmer = await Farmer.findByIdAndDelete(farmerId);
 
     if (!deletedFarmer) {
       return res.status(404).json({
@@ -1201,7 +1211,7 @@ export const updateFundingStatus = async (
     const { fundingStatus } = req.body;
 
     const updatedFarmer = await Farmer.findByIdAndUpdate(
-      { farmerId: farmerId },
+      { _id: farmerId },
       { fundingStatus },
       { new: true },
     );
@@ -1233,7 +1243,7 @@ export const markYieldReceived = async (
     const { farmerId } = req.params;
 
     const updatedFarmer = await Farmer.findByIdAndUpdate(
-      { farmerId: farmerId },
+      { _id: farmerId },
       { yieldRecieved: true },
       { new: true },
     );
@@ -1256,11 +1266,3 @@ export const markYieldReceived = async (
     });
   }
 };
-
-// investment table
-/*
-  investmentId, investorName, title, produce, units, current stage, totalPrice, status, orderDate
-  you may need a modal to show more details about the investment when clicked
-  */
-
-// the produce page needs to be modified such that the table shows a modal to set stage
