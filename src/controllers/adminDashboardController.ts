@@ -1,3 +1,4 @@
+import { parseCultivatedProduce, cultivationAnalytics } from "../utils/producerCultivation.js";
 import {
   fulfillmentStages,
   normalizeStage,
@@ -57,6 +58,7 @@ export const getDashboardOverview = async (req: Request, res: Response) => {
       inflow,
       portfolio,
       recent,
+      producers,
     ] = await Promise.all([
       Investment.aggregate([
         { $match: { orderStatus: "confirmed" } },
@@ -114,6 +116,7 @@ export const getDashboardOverview = async (req: Request, res: Response) => {
         .limit(6)
         .populate("user", "firstName lastName email")
         .lean(),
+      Farmer.find().select("farmSize produceCultivated cropsGrown").lean(),
     ]);
     res.json({
       success: true,
@@ -126,6 +129,7 @@ export const getDashboardOverview = async (req: Request, res: Response) => {
           pendingWithdrawalAmount: pendingWithdrawals[0]?.amount ?? 0,
           pendingWithdrawalCount: pendingWithdrawals[0]?.count ?? 0,
         },
+        cultivation: cultivationAnalytics(producers),
         inflow,
         portfolio,
         recent,
@@ -1046,7 +1050,7 @@ export const createFarmer = async (req: Request, res: Response) => {
       state,
       farmSize,
       fundingAmount,
-      cropsGrown,
+      produceCultivated,
       expectedYield,
     } = req.body;
 
@@ -1057,8 +1061,7 @@ export const createFarmer = async (req: Request, res: Response) => {
       !state ||
       !farmSize ||
       !fundingAmount ||
-      !cropsGrown ||
-      !expectedYield
+      !produceCultivated
     ) {
       return res.status(400).json({
         error: "All fields are required",
@@ -1068,6 +1071,13 @@ export const createFarmer = async (req: Request, res: Response) => {
     if (positiveNumber(farmSize) === null || positiveNumber(fundingAmount) === null) {
       return res.status(400).json({ success: false, message: "Farm size in acres and funding amount must be positive numbers" });
     }
+
+    if (expectedYield !== undefined && typeof expectedYield !== "string") {
+      return res.status(400).json({ success: false, message: "Expected yield must be text" });
+    }
+    let cultivation;
+    try { cultivation = parseCultivatedProduce(produceCultivated); }
+    catch (error) { return res.status(400).json({ success: false, message: (error as Error).message }); }
 
     // Type assertion here
     const file = req.files as { [fieldname: string]: Express.Multer.File[] };
@@ -1093,7 +1103,7 @@ export const createFarmer = async (req: Request, res: Response) => {
       farmSize: String(Number(farmSize)),
       fundingAmount: String(Number(fundingAmount)),
       amountFunded: 0,
-      cropsGrown,
+      produceCultivated: cultivation,
       farmerID: generateFarmerID(),
       expectedYield,
       profilePhoto: {
@@ -1121,7 +1131,7 @@ export const updateFarmer = async (
 ) => {
   try {
     const { farmerId } = req.params;
-    const { farmSize, fundingAmount, cropsGrown, expectedYield } = req.body;
+    const { farmSize, fundingAmount, produceCultivated, expectedYield } = req.body;
 
     if (!mongoose.isObjectIdOrHexString(farmerId)) {
       return res.status(400).json({ success: false, message: "Invalid producer ID" });
@@ -1130,9 +1140,13 @@ export const updateFarmer = async (
         (fundingAmount !== undefined && positiveNumber(fundingAmount) === null)) {
       return res.status(400).json({ success: false, message: "Farm size in acres and funding amount must be positive numbers" });
     }
-    if ((cropsGrown !== undefined && (!Array.isArray(cropsGrown) || !cropsGrown.length || cropsGrown.some((crop: unknown) => typeof crop !== "string" || !crop.trim()))) ||
-        (expectedYield !== undefined && (typeof expectedYield !== "string" || !expectedYield.trim()))) {
-      return res.status(400).json({ success: false, message: "Crops and expected yield are required" });
+    let cultivation;
+    if (produceCultivated !== undefined) {
+      try { cultivation = parseCultivatedProduce(produceCultivated); }
+      catch (error) { return res.status(400).json({ success: false, message: (error as Error).message }); }
+    }
+    if (expectedYield !== undefined && typeof expectedYield !== "string") {
+      return res.status(400).json({ success: false, message: "Expected yield must be text" });
     }
     const updatedFarmer = await Farmer.findById(farmerId);
 
@@ -1154,7 +1168,10 @@ export const updateFarmer = async (
       if (status === "fully funded") updatedFarmer.amountFunded = Number(fundingAmount);
     }
     updatedFarmer.set("fundingStatus", status);
-    if (cropsGrown !== undefined) updatedFarmer.cropsGrown = cropsGrown;
+    if (cultivation !== undefined) {
+      updatedFarmer.set("produceCultivated", cultivation);
+      updatedFarmer.set("cropsGrown", undefined);
+    }
     if (expectedYield !== undefined) updatedFarmer.expectedYield = expectedYield;
 
     // Type assertion here
@@ -1252,42 +1269,6 @@ export const updateFundingStatus = async (
     return res.status(200).json({ success: true, farmer: updatedFarmer });
   } catch (error: any) {
     logError("admin.farmer_funding_update_failed", error);
-    return res.status(500).json({
-      success: false,
-      message: "Server error",
-    });
-  }
-};
-
-export const markYieldReceived = async (
-  req: Request<{ farmerId: string }>,
-  res: Response,
-) => {
-  try {
-    const { farmerId } = req.params;
-
-    if (!mongoose.isObjectIdOrHexString(farmerId)) {
-      return res.status(400).json({ success: false, message: "Invalid producer ID" });
-    }
-
-    const updatedFarmer = await Farmer.findByIdAndUpdate(
-      farmerId,
-      { yieldRecieved: true },
-      { new: true, runValidators: true },
-    );
-
-    if (!updatedFarmer) {
-      return res.status(404).json({
-        message: "Producer not found",
-      });
-    }
-
-    return res.status(200).json({
-      success: true,
-      farmer: updatedFarmer,
-    });
-  } catch (error: any) {
-    logError("admin.farmer_yield_update_failed", error);
     return res.status(500).json({
       success: false,
       message: "Server error",

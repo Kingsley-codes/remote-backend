@@ -14,7 +14,6 @@ import {
   updateFarmer,
   deleteFarmer,
   updateFundingStatus,
-  markYieldReceived,
   getDashboardOverview,
   getDashboardStats,
 } from "../controllers/adminDashboardController.js";
@@ -72,11 +71,6 @@ adminDashboardRouter.patch(
   "/farmers/:farmerId/funding",
   adminAuthenticate,
   updateFundingStatus,
-);
-adminDashboardRouter.patch(
-  "/farmers/:farmerId/yield",
-  adminAuthenticate,
-  markYieldReceived,
 );
 adminDashboardRouter.delete(
   "/farmers/:farmerId",

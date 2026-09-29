@@ -35,9 +35,15 @@ const farmerSchema = new Schema({
     type: Number,
     min: 0,
   },
-  cropsGrown: {
-    type: [String],
-    required: true,
+  // Retained for reading legacy producers until their cultivation details are completed.
+  cropsGrown: { type: [String], default: undefined },
+  produceCultivated: {
+    type: [new Schema({
+      name: { type: String, required: true, trim: true, maxlength: 100 },
+      category: { type: String, required: true, enum: ["livestock", "crops", "aquaculture"] },
+      farmingCapacityKg: { type: Number, required: true, validate: (value: number) => Number.isFinite(value) && value > 0 },
+    }, { _id: false })],
+    default: undefined,
   },
   fundingStatus: {
     type: String,
@@ -48,14 +54,7 @@ const farmerSchema = new Schema({
     publicId: { type: String },
     url: { type: String },
   },
-  expectedYield: {
-    type: String,
-    required: true,
-  },
-  yieldRecieved: {
-    type: Boolean,
-    default: false,
-  },
+  expectedYield: { type: String, default: "" },
   farmerID: {
     type: String,
     required: true,
