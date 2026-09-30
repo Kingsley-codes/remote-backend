@@ -105,6 +105,8 @@ export interface PaystackEventData {
   reference: string;
   paid_at: string; // ISO date string
   amount: number;
+  requested_amount?: number | null;
+  fees?: number | null;
   currency: string;
   status?: string;
   metadata: {

@@ -10,6 +10,7 @@ import Transaction from "../models/transactionModel.js";
 import mongoose from "mongoose";
 import { writeAuditLog } from "../services/auditService.js";
 import { logInfo } from "../utils/logger.js";
+import { matchesPaystackPaymentAmount } from "../utils/paystackAmount.js";
 import {
   sendInvestmentPaymentEmail,
   sendWithdrawalCompletedEmail,
@@ -50,7 +51,7 @@ export const handleChargeSuccess = async (
       const settledPayment = payment;
 
       const expectedAmount = Math.round(settledPayment.amount * 100);
-      if (eventData.amount !== expectedAmount || eventData.currency?.toUpperCase() !== "NGN") {
+      if (!matchesPaystackPaymentAmount(eventData, expectedAmount)) {
         throw new Error("Payment provider amount or currency mismatch");
       }
 
