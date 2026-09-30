@@ -2,14 +2,9 @@ import passport from "passport";
 import { Strategy as GoogleStrategy, Profile } from "passport-google-oauth20";
 import { JwtPayload } from "jsonwebtoken";
 import User from "../models/userModel.js";
-import Admin from "../models/adminModel.js";
 import { generateUSerID } from "../controllers/authControllers.js";
 
 export interface UserJwtPayload extends JwtPayload {
-  id: string;
-}
-
-export interface AdminJwtPayload extends JwtPayload {
   id: string;
 }
 
@@ -80,63 +75,5 @@ passport.use(
   ),
 );
 
-// ─── Admin Strategy ───────────────────────────────────────────────────────────
-passport.use(
-  "google-admin",
-  new GoogleStrategy(
-    {
-      clientID: process.env.GOOGLE_CLIENT_ID!,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
-      callbackURL: process.env.GOOGLE_ADMIN_CALLBACK_URL!,
-    },
-    async (
-      _accessToken: string,
-      _refreshToken: string,
-      profile: Profile,
-      done: (error: any, user?: AdminJwtPayload | false) => void,
-    ) => {
-      try {
-        const email = profile.emails?.[0]?.value ?? "";
-        const avatar = profile.photos?.[0]?.value;
-
-        // Admins are NOT created via OAuth — they must already exist
-        let admin = await Admin.findOne({ googleId: profile.id });
-
-        if (!admin) {
-          // Link Google to an existing admin account only — never auto-create
-          admin = await Admin.findOne({ email });
-
-          if (!admin) {
-            // No admin account found — block access entirely
-            return done(null, false);
-          }
-
-          // Link their existing admin account to Google
-          admin.googleId = profile.id;
-          admin.oauthProviders = { google: profile.id };
-          if (!admin.profilePhoto?.url && avatar) {
-            admin.profilePhoto = { publicId: "", url: avatar };
-          }
-          await admin.save({ validateBeforeSave: false });
-        }
-
-        if (admin.status === "suspended") {
-          return done(null, false);
-        }
-
-        const payload: AdminJwtPayload = {
-          id: admin._id.toString(),
-          email: admin.email,
-          name: `${admin.firstName} ${admin.lastName}`.trim(),
-          avatar: admin.profilePhoto?.url,
-        };
-
-        return done(null, payload);
-      } catch (error) {
-        return done(error, false);
-      }
-    },
-  ),
-);
 
 export default passport;

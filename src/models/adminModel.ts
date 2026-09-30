@@ -13,12 +13,11 @@ const adminSchema = new Schema(
       required: true,
       trim: true,
     },
-    googleId: {
+    role: {
       type: String,
-      sparse: true,
-    },
-    oauthProviders: {
-      google: { type: String },
+      enum: ["admin", "super-admin"],
+      default: "admin",
+      required: true,
     },
     email: {
       type: String,

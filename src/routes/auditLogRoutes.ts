@@ -1,7 +1,7 @@
 // routes/admin/auditLogRoutes.ts
 import express from "express";
 
-import { adminAuthenticate } from "../middleware/authenticationMiddleware.js";
+import { adminAuthenticate, requireSuperAdmin } from "../middleware/authenticationMiddleware.js";
 import {
   getAuditLogStats,
   exportAuditLogs,
@@ -10,7 +10,7 @@ import {
 
 const router = express.Router();
 
-router.use(adminAuthenticate);
+router.use(adminAuthenticate, requireSuperAdmin);
 
 router.get("/", getAuditLogs);
 router.get("/stats", getAuditLogStats);

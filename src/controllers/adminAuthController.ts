@@ -1,11 +1,8 @@
-import { NextFunction, Request, Response } from "express";
+import { Request, Response } from "express";
 import bcrypt from "bcrypt";
 import Admin from "../models/adminModel.js";
 import { LoginRequestBody } from "../interface/allInterfaces.js";
-import { AdminJwtPayload } from "../config/passport.js";
-import passport from "passport";
 import { authCookieOptions, signIdentityToken } from "../services/tokenService.js";
-import { consumeOAuthState, issueOAuthState } from "../services/oauthStateService.js";
 import { writeActorAuditSafely } from "../services/auditService.js";
 import { logError } from "../utils/logger.js";
 
@@ -70,52 +67,6 @@ export const adminLogin = async (
       message: "Login failed due to server error",
     });
   }
-};
-
-export const handleGoogleLogin = (
-  req: Request,
-  res: Response,
-  next: NextFunction,
-) => {
-  const state = issueOAuthState(res, "oauth_admin_state");
-  passport.authenticate("google-admin", {
-    scope: ["profile", "email"],
-    session: false,
-    state,
-  })(req, res, next);
-};
-
-export const googleAuthCallback = (
-  req: Request,
-  res: Response,
-  next: NextFunction,
-) => {
-  if (!consumeOAuthState(req, res, "oauth_admin_state")) {
-    return res.redirect(`${process.env.FRONTEND_URL}/admin/login?error=invalid_oauth_state`);
-  }
-  passport.authenticate(
-    "google-admin",
-    { session: false },
-    (err: Error | null, user: AdminJwtPayload | false) => {
-      if (err) return next(err);
-      if (!user)
-        return res.redirect(
-          `${process.env.FRONTEND_URL}/admin/login?error=oauth_failed`,
-        );
-
-      void Admin.findById(user.id).select("sessionVersion").then(async (record) => {
-        if (!record) return res.redirect(`${process.env.FRONTEND_URL}/admin/login?error=oauth_failed`);
-        const token = signIdentityToken(user.id, "admin", record.sessionVersion ?? 0);
-        res.cookie("admin_token", token, authCookieOptions());
-        req.admin = record._id;
-        await writeActorAuditSafely(req, { action: "LOGIN", entityType: "ADMIN", entityId: user.id, details: "Google OAuth login" });
-        res.redirect(`${process.env.FRONTEND_URL}/admin/dashboard`);
-      }).catch((error) => {
-        logError("auth.oauth_admin_callback_failed", error);
-        next(error);
-      });
-    },
-  )(req, res, next);
 };
 
 export const adminLogout = async (req: Request, res: Response) => {

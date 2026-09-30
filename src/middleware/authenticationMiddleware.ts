@@ -101,6 +101,7 @@ export const adminAuthenticate = async (
     if (!requireTrustedOrigin(req, res)) return;
 
     req.admin = currentUser._id;
+    req.adminRole = currentUser.role;
     return next();
   } catch (err: any) {
     logError("auth.admin_rejected", err, { path: req.originalUrl });
@@ -116,4 +117,12 @@ export const adminAuthenticate = async (
       message,
     });
   }
+};
+
+// Must run after adminAuthenticate; the role comes from the current database record.
+export const requireSuperAdmin = (req: Request, res: Response, next: NextFunction) => {
+  if (!req.admin || req.adminRole !== "super-admin") {
+    return res.status(403).json({ status: "fail", message: "Super admin access required" });
+  }
+  return next();
 };

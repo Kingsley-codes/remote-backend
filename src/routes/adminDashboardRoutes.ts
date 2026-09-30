@@ -17,7 +17,7 @@ import {
   getDashboardOverview,
   getDashboardStats,
 } from "../controllers/adminDashboardController.js";
-import { adminAuthenticate } from "../middleware/authenticationMiddleware.js";
+import { adminAuthenticate, requireSuperAdmin } from "../middleware/authenticationMiddleware.js";
 import { cleanupUploadedFiles, handleUploadErrors, uploadProducerImages } from "../middleware/uploadMiddleware.js";
 
 import { adminWithdrawBalance } from "../controllers/adminWalletController.js";
@@ -50,10 +50,10 @@ adminDashboardRouter.patch(
 adminDashboardRouter.get("/payments", adminAuthenticate, getAllPayments);
 adminDashboardRouter.get("/withdrawals", adminAuthenticate, getAllWithdrawals);
 
-adminDashboardRouter.get("/farmers", adminAuthenticate, getAllFarmers);
+adminDashboardRouter.use("/farmers", adminAuthenticate, requireSuperAdmin);
+adminDashboardRouter.get("/farmers", getAllFarmers);
 adminDashboardRouter.post(
   "/farmers",
-  adminAuthenticate,
   cleanupUploadedFiles,
   uploadProducerImages,
   handleUploadErrors,
@@ -61,7 +61,6 @@ adminDashboardRouter.post(
 );
 adminDashboardRouter.patch(
   "/farmers/:farmerId",
-  adminAuthenticate,
   cleanupUploadedFiles,
   uploadProducerImages,
   handleUploadErrors,
@@ -69,12 +68,10 @@ adminDashboardRouter.patch(
 );
 adminDashboardRouter.patch(
   "/farmers/:farmerId/funding",
-  adminAuthenticate,
   updateFundingStatus,
 );
 adminDashboardRouter.delete(
   "/farmers/:farmerId",
-  adminAuthenticate,
   deleteFarmer,
 );
 

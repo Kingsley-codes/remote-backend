@@ -5,6 +5,7 @@ declare global {
     interface Request {
       user?: Types.ObjectId;
       admin?: Types.ObjectId;
+      adminRole?: "admin" | "super-admin";
     }
   }
 }
