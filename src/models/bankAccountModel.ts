@@ -23,7 +23,8 @@ const bankAccountSchema = new Schema(
     bankName: { type: String },
     recipientCode: {
       type: String,
-      required: true,
+      // Retained for legacy Paystack transfers; manual withdrawals do not use it.
+      // required: true, // Restore when every linked account has a Paystack recipient.
       select: false,
     },
   },

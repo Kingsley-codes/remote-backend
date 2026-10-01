@@ -6,11 +6,8 @@ import {
 } from "../utils/productionStages.js";
 import { Request, Response } from "express";
 import Investment from "../models/investmentModel.js";
-import {
-  createRecipient,
-  // initiateTransfer,
-  // verifyTransfer,
-} from "../utils/paystackUtils.js";
+// Restore when automated Paystack transfers are enabled.
+// import { createRecipient, initiateTransfer, verifyTransfer } from "../utils/paystackUtils.js";
 import BankAccount from "../models/bankAccountModel.js";
 import User from "../models/userModel.js";
 import bcrypt from "bcrypt";
@@ -498,27 +495,28 @@ export const addBankAccount = async (req: Request, res: Response) => {
         success: false,
         message: "Invalid or expired verification code",
       });
-    const { accountName, accountNumber, bankCode } = payload as {
+    const { accountName, accountNumber, bankCode, bankName } = payload as {
       accountName: string;
       accountNumber: string;
       bankCode: string;
+      bankName: string;
     };
 
-    // 1. Create Paystack recipient
-    const recipient = await createRecipient({
-      name: accountName,
-      account_number: accountNumber,
-      bank_code: bankCode,
-    });
+    // Disabled while withdrawals are processed manually.
+    // const recipient = await createRecipient({
+    //   name: accountName,
+    //   account_number: accountNumber,
+    //   bank_code: bankCode,
+    // });
 
-    // 2. Save to DB
+    // Manual withdrawals only need the bank details authorized by this OTP.
     const bank = await BankAccount.create({
       user: userId,
       accountName,
       accountNumber,
       bankCode,
-      bankName: await resolveBankName(bankCode),
-      recipientCode: recipient.recipient_code,
+      bankName,
+      // recipientCode: recipient.recipient_code,
     });
 
     return res.status(201).json({
@@ -577,17 +575,20 @@ export const updateBankAccount = async (req: Request, res: Response) => {
       return res
         .status(404)
         .json({ success: false, message: "No withdrawal account found" });
-    const recipient = await createRecipient({
-      name: accountName,
-      account_number: accountNumber,
-      bank_code: bankCode,
-    });
+    // Disabled while withdrawals are processed manually.
+    // const recipient = await createRecipient({
+    //   name: accountName,
+    //   account_number: accountNumber,
+    //   bank_code: bankCode,
+    // });
     existing.set({
       accountName,
       accountNumber,
       bankCode,
       bankName: await resolveBankName(bankCode),
-      recipientCode: recipient.recipient_code,
+      // Replace this with recipient.recipient_code when Paystack transfers resume.
+      recipientCode: undefined,
+      // recipientCode: recipient.recipient_code,
     });
     await existing.save();
     return res.json({ success: true, data: maskedBankAccount(existing) });
