@@ -41,6 +41,9 @@ passport.use(
             if (!user.profilePhoto?.url && avatar) {
               user.profilePhoto = { publicId: "", url: avatar };
             }
+            if (!user.isVerified) {
+              user.isVerified = true;
+            }
             await user.save({ validateBeforeSave: false });
           } else {
             user = await User.create({
@@ -74,6 +77,5 @@ passport.use(
     },
   ),
 );
-
 
 export default passport;
