@@ -766,6 +766,11 @@ export const handleWebhook = async (req: Request, res: Response) => {
     logInfo("paystack.webhook_received", {
       eventType: String(event.event),
       reference: String(eventData.reference),
+      ...(String(event.event).startsWith("transfer.") ? {
+        transferStatus: typeof eventData.status === "string" ? eventData.status : undefined,
+        transferCode: typeof eventData.transfer_code === "string" ? eventData.transfer_code : undefined,
+        failureReason: typeof eventData.failure_reason === "string" ? eventData.failure_reason : undefined,
+      } : {}),
     });
 
     switch (event.event) {

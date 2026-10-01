@@ -697,7 +697,6 @@ export const getBanks = async (req: Request, res: Response) => {
 const WITHDRAWAL_IDEMPOTENCY_KEY_PATTERN = /^[A-Za-z0-9._:-]{16,128}$/;
 
 const isDefinitiveTransferRejection = (error: any) => {
-  if (error?.definitive === true) return true;
   if (!axios.isAxiosError(error) || !error.response) return false;
 
   const status = error.response.status;
@@ -726,8 +725,7 @@ const sendWithdrawalResponse = async (
 
   if (
     currentWithdrawal.status === "pending" &&
-    currentWithdrawal.transferInitiationStatus === "uncertain" &&
-    process.env.NODE_ENV !== "development"
+    currentWithdrawal.transferInitiationStatus === "uncertain"
   ) {
     try {
       const verification = await verifyTransfer(

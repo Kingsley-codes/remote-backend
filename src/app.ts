@@ -18,7 +18,6 @@ import userRouter from "./routes/userRoutes.js";
 import "./config/passport.js";
 import adminDashboardRouter from "./routes/adminDashboardRoutes.js";
 import userDashboardRouter from "./routes/userDashboardRoutes.js";
-import devWithdrawRouter from "./routes/devWithdrawRoutes.js";
 import { userTicketRouter, adminTicketRouter } from "./routes/ticketRoutes.js";
 import { userPushRouter, adminPushRouter } from "./routes/pushRoutes.js";
 import { agriLearnRouter, adminAgriLearnRouter } from "./routes/agriLearnRoutes.js";
@@ -111,10 +110,6 @@ app.use("/api/auth", authLimiter);
 app.use("/api/auth", accountAuthLimiter);
 app.use("/api/admin/auth", authLimiter);
 app.use("/api/admin/auth", accountAuthLimiter);
-
-if (process.env.NODE_ENV === "development") {
-  app.use("/api/dev", devWithdrawRouter);
-}
 
 // Define API routes
 app.use("/api/auth", authRouter); // Register auth routes

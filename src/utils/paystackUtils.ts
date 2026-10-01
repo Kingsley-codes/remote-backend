@@ -10,9 +10,7 @@ if (!process.env.PAYSTACK_SECRET_KEY) {
 }
 
 const paystack = axios.create({
-  ...(process.env.PAYSTACK_BASE_URL && {
-    baseURL: process.env.PAYSTACK_BASE_URL,
-  }),
+  baseURL: process.env.PAYSTACK_BASE_URL || "https://api.paystack.co",
   headers: {
     Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
     "Content-Type": "application/json",
@@ -69,54 +67,62 @@ export const createRecipient = async (data: {
   return res.data.data;
 };
 
-export const realInitiateTransfer = async (data: {
+// Only log diagnostic fields; recipient details and request credentials stay private.
+const transferResponseMetadata = (body: any) => ({
+  providerStatus: typeof body?.status === "boolean" ? body.status : undefined,
+  providerMessage: typeof body?.message === "string" ? body.message : undefined,
+  transferStatus: typeof body?.data?.status === "string" ? body.data.status : undefined,
+  transferCode: typeof body?.data?.transfer_code === "string" ? body.data.transfer_code : undefined,
+  providerReference: typeof body?.data?.reference === "string" ? body.data.reference : undefined,
+  failureReason: typeof body?.data?.failure_reason === "string" ? body.data.failure_reason : undefined,
+});
+
+export const initiateTransfer = async (data: {
   amount: number;
   recipient: string;
   reference: string;
 }) => {
-  const res = await paystack.post("/transfer", {
-    source: "balance",
-    amount: data.amount * 100,
-    recipient: data.recipient,
-    reference: data.reference,
-    reason: "Withdrawal",
-  });
-
-  return res.data.data;
+  try {
+    const res = await paystack.post("/transfer", {
+      source: "balance",
+      amount: data.amount * 100,
+      recipient: data.recipient,
+      reference: data.reference,
+      reason: "Withdrawal",
+    });
+    logInfo("paystack.transfer_response", {
+      reference: data.reference,
+      httpStatus: res.status,
+      ...transferResponseMetadata(res.data),
+    });
+    return res.data.data;
+  } catch (error) {
+    const response = axios.isAxiosError(error) ? error.response : undefined;
+    logError("paystack.transfer_failed", error, {
+      reference: data.reference,
+      httpStatus: response?.status,
+      ...transferResponseMetadata(response?.data),
+    });
+    throw error;
+  }
 };
 
 export const verifyTransfer = async (reference: string) => {
-  const res = await paystack.get(`/transfer/verify/${reference}`);
-  return res.data;
-};
-
-// utils/transfer.ts
-const mockInitiateTransfer = async (data: {
-  amount: number;
-  recipient: string;
-  reference: string;
-}) => {
-  logInfo("paystack.mock_transfer_started", {
-    amount: data.amount,
-    reference: data.reference,
-  });
-
-  // Simulate network delay
-  await new Promise((res) => setTimeout(res, 500));
-
-  // Simulate occasional failure to test your rollback logic
-  if (Math.random() < 0.3) {
-    const error = new Error("Mock transfer failure") as Error & {
-      definitive?: boolean;
-    };
-    error.definitive = true;
+  try {
+    const res = await paystack.get(`/transfer/verify/${reference}`);
+    logInfo("paystack.transfer_verification_response", {
+      reference,
+      httpStatus: res.status,
+      ...transferResponseMetadata(res.data),
+    });
+    return res.data;
+  } catch (error) {
+    const response = axios.isAxiosError(error) ? error.response : undefined;
+    logError("paystack.transfer_verification_failed", error, {
+      reference,
+      httpStatus: response?.status,
+      ...transferResponseMetadata(response?.data),
+    });
     throw error;
   }
-
-  return { reference: data.reference };
 };
-
-export const initiateTransfer =
-  process.env.NODE_ENV === "development"
-    ? mockInitiateTransfer
-    : realInitiateTransfer;
