@@ -36,7 +36,9 @@ export const initializePaystackTransaction = async (
       data: response.data.data,
     };
   } catch (error: any) {
-    logError("paystack.initialize_failed", error, { status: error.response?.status });
+    logError("paystack.initialize_failed", error, {
+      status: error.response?.status,
+    });
 
     // Return consistent error format
     return {
@@ -94,7 +96,10 @@ const mockInitiateTransfer = async (data: {
   recipient: string;
   reference: string;
 }) => {
-  logInfo("paystack.mock_transfer_started", { amount: data.amount, reference: data.reference });
+  logInfo("paystack.mock_transfer_started", {
+    amount: data.amount,
+    reference: data.reference,
+  });
 
   // Simulate network delay
   await new Promise((res) => setTimeout(res, 500));

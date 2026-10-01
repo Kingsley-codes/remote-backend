@@ -1,5 +1,8 @@
 import { buildWalletFilter } from "../utils/walletFilters.js";
-import { fulfillmentStages, normalizeStage } from "../utils/productionStages.js";
+import {
+  fulfillmentStages,
+  normalizeStage,
+} from "../utils/productionStages.js";
 import { Request, Response } from "express";
 import Investment from "../models/investmentModel.js";
 import {
@@ -23,7 +26,14 @@ import { sendOtpEmail } from "../services/emailService.js";
 import crypto from "crypto";
 import { logError } from "../utils/logger.js";
 
-const maskedBankAccount = (bank: { _id: unknown; accountName: string; accountNumber: string; bankCode: string; createdAt?: Date; updatedAt?: Date }) => ({
+const maskedBankAccount = (bank: {
+  _id: unknown;
+  accountName: string;
+  accountNumber: string;
+  bankCode: string;
+  createdAt?: Date;
+  updatedAt?: Date;
+}) => ({
   _id: String(bank._id),
   accountName: bank.accountName,
   accountNumber: `******${bank.accountNumber.slice(-4)}`,
@@ -44,7 +54,10 @@ export const getUserDashboardOverview = async (req: Request, res: Response) => {
 
     const [userInvestments, wallet] = await Promise.all([
       Investment.find({ user: userId })
-        .populate("produce", "produceName title category status stage image1 image2 image3 rolloverProfit tracks")
+        .populate(
+          "produce",
+          "produceName title category status stage image1 image2 image3 rolloverProfit tracks",
+        )
         .populate("payment", "amount status")
         .sort({ orderDate: -1 }),
       Wallet.findOne({ user: userId }),
@@ -58,7 +71,7 @@ export const getUserDashboardOverview = async (req: Request, res: Response) => {
     );
     const totalProjectedProfit = activeInvestments.reduce(
       (total, investment) =>
-        total + investment.totalPrice * investment.profit / 100,
+        total + (investment.totalPrice * investment.profit) / 100,
       0,
     );
     const totalProjectedReturn = activeInvestments.reduce(
@@ -73,8 +86,13 @@ export const getUserDashboardOverview = async (req: Request, res: Response) => {
         walletBalance: wallet?.balance ?? 0,
         userInvestments: userInvestments.map((investment) => {
           const record = investment.toObject();
-          const produce = record.produce as unknown as { category?: string } | null;
-          return { ...record, stage: normalizeStage(record.stage, produce?.category ?? "crops") };
+          const produce = record.produce as unknown as {
+            category?: string;
+          } | null;
+          return {
+            ...record,
+            stage: normalizeStage(record.stage, produce?.category ?? "crops"),
+          };
         }),
         totalInvestedAmount,
         totalActiveInvestments: activeInvestments.length,
@@ -106,10 +124,18 @@ export const getUserTransactionHistory = async (
 
     // pagination
     const page = Math.max(Number(req.query.page) || 1, 1);
-    const limit = Math.min(Math.max(Math.floor(Number(req.query.limit) || 10), 1), 100);
+    const limit = Math.min(
+      Math.max(Math.floor(Number(req.query.limit) || 10), 1),
+      100,
+    );
     let filter;
-    try { filter = { user: userId, ...buildWalletFilter(req.query) }; }
-    catch (error) { return res.status(400).json({ success: false, message: (error as Error).message }); }
+    try {
+      filter = { user: userId, ...buildWalletFilter(req.query) };
+    } catch (error) {
+      return res
+        .status(400)
+        .json({ success: false, message: (error as Error).message });
+    }
 
     const [transactions, total] = await Promise.all([
       Transaction.find(filter)
@@ -152,8 +178,13 @@ export const getUserTransactionHistory = async (
               type: "withdrawal" as const,
               reference: transaction.transactionRef,
               transactionID: transaction.transactionID,
-              title: transaction.initiatedByAdmin ? "Admin wallet withdrawal" : "Withdrawal to bank",
-              subtitle: transaction.initiatedByAdmin ? "Initiated by an admin. No bank transfer. " + (transaction.settlementNote || "") : "Transfer to your linked bank account",
+              title: transaction.initiatedByAdmin
+                ? "Admin wallet withdrawal"
+                : "Withdrawal to bank",
+              subtitle: transaction.initiatedByAdmin
+                ? "Initiated by an admin. No bank transfer. " +
+                  (transaction.settlementNote || "")
+                : "Transfer to your linked bank account",
               amount: transaction.amount,
               currency: transaction.currency,
               direction: "debit" as const,
@@ -203,11 +234,18 @@ export const getUserTransactionHistory = async (
       success: true,
       data: {
         transactions: history,
-        meta: { page, total, totalPages: Math.max(1, Math.ceil(total / limit)), limit },
+        meta: {
+          page,
+          total,
+          totalPages: Math.max(1, Math.ceil(total / limit)),
+          limit,
+        },
       },
     });
   } catch (error: any) {
-    logError("wallet.transaction_history_failed", error, { userId: req.user?.toString() });
+    logError("wallet.transaction_history_failed", error, {
+      userId: req.user?.toString(),
+    });
 
     return res.status(500).json({
       success: false,
@@ -240,7 +278,9 @@ export const getUserTransactionById = async (req: Request, res: Response) => {
 
     return res.status(200).json({ success: true, data: { transaction } });
   } catch (error: any) {
-    logError("wallet.transaction_fetch_failed", error, { userId: req.user?.toString() });
+    logError("wallet.transaction_fetch_failed", error, {
+      userId: req.user?.toString(),
+    });
     return res.status(500).json({
       success: false,
       message: "Unable to get transaction",
@@ -259,7 +299,10 @@ export const getUserInvestments = async (req: Request, res: Response) => {
     }
 
     const userInvestments = await Investment.find({ user: userId })
-      .populate("produce", "produceName title category status stage image1 image2 image3 rolloverProfit tracks")
+      .populate(
+        "produce",
+        "produceName title category status stage image1 image2 image3 rolloverProfit tracks",
+      )
       .populate("payment", "amount status");
 
     const totalInvestedAmount = userInvestments.reduce((total, investment) => {
@@ -272,7 +315,7 @@ export const getUserInvestments = async (req: Request, res: Response) => {
     const totalActiveInvestments = activeInvestments.length;
     const totalProjectedProfit = activeInvestments.reduce(
       (total, investment) =>
-        total + investment.totalPrice * investment.profit / 100,
+        total + (investment.totalPrice * investment.profit) / 100,
       0,
     );
     const totalProjectedReturn = activeInvestments.reduce(
@@ -286,8 +329,13 @@ export const getUserInvestments = async (req: Request, res: Response) => {
       data: {
         userInvestments: userInvestments.map((investment) => {
           const record = investment.toObject();
-          const produce = record.produce as unknown as { category?: string } | null;
-          return { ...record, stage: normalizeStage(record.stage, produce?.category ?? "crops") };
+          const produce = record.produce as unknown as {
+            category?: string;
+          } | null;
+          return {
+            ...record,
+            stage: normalizeStage(record.stage, produce?.category ?? "crops"),
+          };
         }),
         totalInvestedAmount,
         totalActiveInvestments,
@@ -296,7 +344,9 @@ export const getUserInvestments = async (req: Request, res: Response) => {
       },
     });
   } catch (error: any) {
-    logError("investment.user_list_failed", error, { userId: req.user?.toString() });
+    logError("investment.user_list_failed", error, {
+      userId: req.user?.toString(),
+    });
     return res.status(500).json({
       success: false,
       message: "Internal server error",
@@ -359,7 +409,9 @@ export const chooseHarvestReturn = async (req: Request, res: Response) => {
       data: { investment },
     });
   } catch (error: any) {
-    logError("investment.harvest_choice_failed", error, { userId: req.user?.toString() });
+    logError("investment.harvest_choice_failed", error, {
+      userId: req.user?.toString(),
+    });
     return res.status(500).json({
       success: false,
       message: "Unable to save harvest choice",
@@ -374,13 +426,11 @@ export const requestBankAccountOtp = async (req: Request, res: Response) => {
     if (!userId)
       return res.status(401).json({ success: false, message: "Unauthorized" });
     if (await BankAccount.exists({ user: userId }))
-      return res
-        .status(409)
-        .json({
-          success: false,
-          message:
-            "A withdrawal account is already linked. Update or remove it first.",
-        });
+      return res.status(409).json({
+        success: false,
+        message:
+          "A withdrawal account is already linked. Update or remove it first.",
+      });
     const user = await User.findById(userId).select("+password");
     if (
       !user?.password ||
@@ -390,12 +440,10 @@ export const requestBankAccountOtp = async (req: Request, res: Response) => {
         .status(401)
         .json({ success: false, message: "Invalid credentials" });
     if (!accountName || !/^\d{10}$/.test(accountNumber ?? "") || !bankCode)
-      return res
-        .status(400)
-        .json({
-          success: false,
-          message: "Valid account details are required",
-        });
+      return res.status(400).json({
+        success: false,
+        message: "Valid account details are required",
+      });
     const code = await issueEmailOtp({
       email: user.email,
       userId: userId.toString(),
@@ -403,14 +451,14 @@ export const requestBankAccountOtp = async (req: Request, res: Response) => {
       payload: { accountName, accountNumber, bankCode },
     });
     await sendOtpEmail(user.email, code, "bank-account");
-    return res
-      .status(200)
-      .json({
-        success: true,
-        message: "A verification code has been sent to your email",
-      });
+    return res.status(200).json({
+      success: true,
+      message: "A verification code has been sent to your email",
+    });
   } catch (err) {
-    logError("bank_account.otp_request_failed", err, { userId: req.user?.toString() });
+    logError("bank_account.otp_request_failed", err, {
+      userId: req.user?.toString(),
+    });
     return res
       .status(503)
       .json({ success: false, message: "Unable to send verification code" });
@@ -428,13 +476,11 @@ export const addBankAccount = async (req: Request, res: Response) => {
         .status(400)
         .json({ success: false, message: "Verification code is required" });
     if (await BankAccount.exists({ user: userId }))
-      return res
-        .status(409)
-        .json({
-          success: false,
-          message:
-            "A withdrawal account is already linked. Update or remove it first.",
-        });
+      return res.status(409).json({
+        success: false,
+        message:
+          "A withdrawal account is already linked. Update or remove it first.",
+      });
     const user = await User.findById(userId).select("email");
     if (!user)
       return res
@@ -447,12 +493,10 @@ export const addBankAccount = async (req: Request, res: Response) => {
       code: otp,
     });
     if (!payload)
-      return res
-        .status(400)
-        .json({
-          success: false,
-          message: "Invalid or expired verification code",
-        });
+      return res.status(400).json({
+        success: false,
+        message: "Invalid or expired verification code",
+      });
     const { accountName, accountNumber, bankCode } = payload as {
       accountName: string;
       accountNumber: string;
@@ -480,7 +524,9 @@ export const addBankAccount = async (req: Request, res: Response) => {
       data: maskedBankAccount(bank),
     });
   } catch (err: any) {
-    logError("bank_account.create_failed", err, { userId: req.user?.toString() });
+    logError("bank_account.create_failed", err, {
+      userId: req.user?.toString(),
+    });
     return res.status(500).json({
       success: false,
       message: "Failed to add bank account",
@@ -489,9 +535,13 @@ export const addBankAccount = async (req: Request, res: Response) => {
 };
 
 export const getBankAccount = async (req: Request, res: Response) => {
-  const bank = await BankAccount.findOne({ user: req.user })
-    .select("accountName +accountNumber bankCode createdAt updatedAt");
-  return res.json({ success: true, data: bank ? maskedBankAccount(bank) : null });
+  const bank = await BankAccount.findOne({ user: req.user }).select(
+    "accountName +accountNumber bankCode createdAt updatedAt",
+  );
+  return res.json({
+    success: true,
+    data: bank ? maskedBankAccount(bank) : null,
+  });
 };
 
 export const updateBankAccount = async (req: Request, res: Response) => {
@@ -507,9 +557,16 @@ export const updateBankAccount = async (req: Request, res: Response) => {
         .status(401)
         .json({ success: false, message: "Invalid credentials" });
     if (!accountName || !/^\d{10}$/.test(accountNumber ?? "") || !bankCode) {
-      return res.status(400).json({ success: false, message: "Valid account details are required" });
+      return res
+        .status(400)
+        .json({
+          success: false,
+          message: "Valid account details are required",
+        });
     }
-    const existing = await BankAccount.findOne({ user: userId }).select("+accountNumber +recipientCode");
+    const existing = await BankAccount.findOne({ user: userId }).select(
+      "+accountNumber +recipientCode",
+    );
     if (!existing)
       return res
         .status(404)
@@ -528,13 +585,13 @@ export const updateBankAccount = async (req: Request, res: Response) => {
     await existing.save();
     return res.json({ success: true, data: maskedBankAccount(existing) });
   } catch (err: any) {
-    logError("bank_account.update_failed", err, { userId: req.user?.toString() });
-    return res
-      .status(500)
-      .json({
-        success: false,
-        message: "Failed to update bank account",
-      });
+    logError("bank_account.update_failed", err, {
+      userId: req.user?.toString(),
+    });
+    return res.status(500).json({
+      success: false,
+      message: "Failed to update bank account",
+    });
   }
 };
 
@@ -621,7 +678,9 @@ const fetchNigerianBanks = async (): Promise<PaystackBank[]> => {
 export const getBanks = async (req: Request, res: Response) => {
   try {
     const banks = await fetchNigerianBanks();
-    const search = String(req.query.search ?? "").trim().toLocaleLowerCase();
+    const search = String(req.query.search ?? "")
+      .trim()
+      .toLocaleLowerCase();
     const results = search
       ? banks.filter((bank) => bank.name.toLocaleLowerCase().includes(search))
       : banks;
@@ -769,11 +828,7 @@ export const withdrawBalance = async (req: Request, res: Response) => {
     const existingWithdrawal = await Transaction.findOne({ idempotencyKey });
     if (existingWithdrawal) {
       if (
-        !matchesWithdrawalRequest(
-          existingWithdrawal,
-          userId.toString(),
-          amount,
-        )
+        !matchesWithdrawalRequest(existingWithdrawal, userId.toString(), amount)
       ) {
         return res.status(409).json({
           success: false,
@@ -834,9 +889,7 @@ export const withdrawBalance = async (req: Request, res: Response) => {
       if (error?.code === 11000) {
         const existing = await Transaction.findOne({ idempotencyKey });
         if (existing) {
-          if (
-            !matchesWithdrawalRequest(existing, userId.toString(), amount)
-          ) {
+          if (!matchesWithdrawalRequest(existing, userId.toString(), amount)) {
             return res.status(409).json({
               success: false,
               message:
@@ -895,7 +948,9 @@ export const withdrawBalance = async (req: Request, res: Response) => {
       throw error;
     }
   } catch (error: any) {
-    logError("withdrawal.request_failed", error, { userId: req.user?.toString() });
+    logError("withdrawal.request_failed", error, {
+      userId: req.user?.toString(),
+    });
     return res.status(400).json({
       success: false,
       message: "Unable to process withdrawal",
