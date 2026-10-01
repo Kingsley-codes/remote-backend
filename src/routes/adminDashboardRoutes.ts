@@ -21,6 +21,7 @@ import { adminAuthenticate, requireSuperAdmin } from "../middleware/authenticati
 import { cleanupUploadedFiles, handleUploadErrors, uploadProducerImages } from "../middleware/uploadMiddleware.js";
 
 import { adminWithdrawBalance } from "../controllers/adminWalletController.js";
+import { approveWithdrawal, getWithdrawalDetails } from "../controllers/manualWithdrawalController.js";
 
 const adminDashboardRouter = express.Router();
 adminDashboardRouter.post("/users/:userId/withdraw", adminAuthenticate, adminWithdrawBalance);
@@ -49,6 +50,8 @@ adminDashboardRouter.patch(
 );
 adminDashboardRouter.get("/payments", adminAuthenticate, getAllPayments);
 adminDashboardRouter.get("/withdrawals", adminAuthenticate, getAllWithdrawals);
+adminDashboardRouter.get("/withdrawals/:withdrawalId", adminAuthenticate, getWithdrawalDetails);
+adminDashboardRouter.post("/withdrawals/:withdrawalId/approve", adminAuthenticate, approveWithdrawal);
 
 adminDashboardRouter.use("/farmers", adminAuthenticate, requireSuperAdmin);
 adminDashboardRouter.get("/farmers", getAllFarmers);

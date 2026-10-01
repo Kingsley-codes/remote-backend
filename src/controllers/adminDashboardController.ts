@@ -7,6 +7,7 @@ import { Request, Response } from "express";
 import User from "../models/userModel.js";
 import Investment from "../models/investmentModel.js";
 import { buildDateFilter } from "../utils/dateFilter.js";
+import { withdrawalPeriod } from "../utils/withdrawalPeriod.js";
 import Farmer from "../models/farmerModel.js";
 import Produce from "../models/produceModel.js";
 import {
@@ -940,14 +941,13 @@ export const getAllWithdrawals = async (req: Request, res: Response) => {
     const limit = 10;
     const skip = (pageNumber - 1) * limit;
 
-    const filter: any = {
-      transactionType: "withdrawal",
-      ...buildDateFilter({
-        date: asString(date),
-        startDate: asString(startDate),
-        endDate: asString(endDate),
-      }),
-    };
+    let periodFilter;
+    try {
+      periodFilter = withdrawalPeriod(asString(date), asString(startDate), asString(endDate));
+    } catch (error) {
+      return res.status(400).json({ success: false, message: error instanceof Error ? error.message : "Invalid period" });
+    }
+    const filter: any = { transactionType: "withdrawal", ...periodFilter };
 
     if (
       status &&
@@ -959,10 +959,15 @@ export const getAllWithdrawals = async (req: Request, res: Response) => {
     if (q) {
       const searchTerm = safeSearchPattern(asString(q));
       if (searchTerm) {
-        filter.$or = [
+        const users = await User.find({ $or: [
           { firstName: { $regex: searchTerm, $options: "i" } },
           { lastName: { $regex: searchTerm, $options: "i" } },
           { email: { $regex: searchTerm, $options: "i" } },
+          { farmerID: { $regex: searchTerm, $options: "i" } },
+        ] }).select("_id").lean();
+        filter.$or = [
+          { transactionID: { $regex: searchTerm, $options: "i" } },
+          { user: { $in: users.map((user) => user._id) } },
         ];
       }
     }

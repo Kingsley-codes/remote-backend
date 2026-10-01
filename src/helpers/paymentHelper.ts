@@ -168,13 +168,14 @@ export const handleChargeFailed = async (eventData: PaystackEventData) => {
 
 export const handleTransferSuccess = async (data: any) => {
   const reference = data.reference;
+  if (typeof reference !== "string" || !reference.trim()) throw new Error("Missing transfer reference");
   const session = await Transaction.startSession();
   let withdrawal: any = null;
 
   try {
     await session.withTransaction(async () => {
       withdrawal = await Transaction.findOneAndUpdate(
-        { transactionRef: reference, transactionType: "withdrawal", status: "pending" },
+          { transactionRef: reference, transactionType: "withdrawal", withdrawalFlow: { $ne: "manual" }, status: "pending" },
         { status: "completed", transferInitiationStatus: "submitted" },
         { new: true, session },
       );
@@ -206,12 +207,13 @@ export const handleTransferSuccess = async (data: any) => {
 
 export const handleTransferFailed = async (data: any) => {
   const reference = data.reference;
+  if (typeof reference !== "string" || !reference.trim()) throw new Error("Missing transfer reference");
   const session = await Transaction.startSession();
 
   try {
     await session.withTransaction(async () => {
       const withdrawal = await Transaction.findOneAndUpdate(
-        { transactionRef: reference, transactionType: "withdrawal", status: "pending" },
+          { transactionRef: reference, transactionType: "withdrawal", withdrawalFlow: { $ne: "manual" }, status: "pending" },
         { status: "failed", transferInitiationStatus: "rejected" },
         { new: true, session },
       );

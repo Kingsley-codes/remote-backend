@@ -7,18 +7,15 @@ import { Request, Response } from "express";
 import Investment from "../models/investmentModel.js";
 import {
   createRecipient,
-  initiateTransfer,
-  verifyTransfer,
+  // initiateTransfer,
+  // verifyTransfer,
 } from "../utils/paystackUtils.js";
 import BankAccount from "../models/bankAccountModel.js";
 import User from "../models/userModel.js";
 import bcrypt from "bcrypt";
 import mongoose from "mongoose";
 import Wallet from "../models/walletModel.js";
-import {
-  generateReference,
-  handleTransferFailed,
-} from "../helpers/paymentHelper.js";
+// Paystack flow imports (disabled): generateReference, handleTransferFailed from ../helpers/paymentHelper.js
 import axios from "axios";
 import Transaction from "../models/transactionModel.js";
 import { consumeEmailOtp, issueEmailOtp } from "../services/otpService.js";
@@ -694,6 +691,13 @@ export const getBanks = async (req: Request, res: Response) => {
   }
 };
 
+export { requestWithdrawal as withdrawBalance } from "./manualWithdrawalController.js";
+
+/*
+Paystack withdrawal flow retained for future implementation.
+Platform transactionID and provider transactionRef are intentionally separate.
+Re-enable the imports below with this flow. Existing provider webhooks remain active
+to settle transfers that were already submitted before manual processing.
 const WITHDRAWAL_IDEMPOTENCY_KEY_PATTERN = /^[A-Za-z0-9._:-]{16,128}$/;
 
 const isDefinitiveTransferRejection = (error: any) => {
@@ -871,7 +875,8 @@ export const withdrawBalance = async (req: Request, res: Response) => {
         const withdrawal = new Transaction({
           user: userId,
           transactionType: "withdrawal",
-          transactionID: withdrawalReference,
+          transactionID: `RA-WD-${crypto.randomUUID()}`,
+          withdrawalFlow: "paystack",
           amount,
           status: "pending",
           transactionRef: withdrawalReference,
@@ -957,3 +962,5 @@ export const withdrawBalance = async (req: Request, res: Response) => {
     await session.endSession();
   }
 };
+
+*/

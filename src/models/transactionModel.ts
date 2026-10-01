@@ -51,6 +51,17 @@ const transactionSchema = new Schema(
     adminName: { type: String },
     walletBalanceBefore: { type: Number },
     walletBalanceAfter: { type: Number },
+    withdrawalFlow: { type: String, enum: ["manual", "paystack"] },
+    withdrawalBankAccount: {
+      type: new Schema({
+        accountName: { type: String, required: true },
+        accountNumber: { type: String, required: true },
+        bankCode: { type: String, required: true },
+      }, { _id: false }),
+      select: false,
+    },
+    approvedBy: { type: Schema.Types.ObjectId, ref: "Admin" },
+    approvedAt: { type: Date },
     withdrawalEmailStatus: { type: String, enum: ["pending", "sent", "failed"] },
     units: {
       type: Number,
