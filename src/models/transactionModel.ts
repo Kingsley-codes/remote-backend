@@ -57,11 +57,22 @@ const transactionSchema = new Schema(
         accountName: { type: String, required: true },
         accountNumber: { type: String, required: true },
         bankCode: { type: String, required: true },
+        bankName: { type: String },
       }, { _id: false }),
       select: false,
     },
     approvedBy: { type: Schema.Types.ObjectId, ref: "Admin" },
     approvedAt: { type: Date },
+    withdrawalReceipt: {
+      type: new Schema({
+        url: { type: String, required: true },
+        publicId: { type: String, required: true },
+        fileName: { type: String, required: true },
+        mimeType: { type: String, required: true },
+        size: { type: Number, required: true },
+        uploadedAt: { type: Date, default: Date.now },
+      }, { _id: false }),
+    },
     withdrawalEmailStatus: { type: String, enum: ["pending", "sent", "failed"] },
     units: {
       type: Number,

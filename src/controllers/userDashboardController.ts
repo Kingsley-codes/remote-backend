@@ -1,3 +1,4 @@
+import { fetchNigerianBanks, resolveBankName } from "../services/bankService.js";
 import { buildWalletFilter } from "../utils/walletFilters.js";
 import {
   fulfillmentStages,
@@ -28,6 +29,7 @@ const maskedBankAccount = (bank: {
   accountName: string;
   accountNumber: string;
   bankCode: string;
+  bankName?: string | null;
   createdAt?: Date;
   updatedAt?: Date;
 }) => ({
@@ -35,6 +37,7 @@ const maskedBankAccount = (bank: {
   accountName: bank.accountName,
   accountNumber: `******${bank.accountNumber.slice(-4)}`,
   bankCode: bank.bankCode,
+  bankName: bank.bankName,
   createdAt: bank.createdAt,
   updatedAt: bank.updatedAt,
 });
@@ -441,11 +444,12 @@ export const requestBankAccountOtp = async (req: Request, res: Response) => {
         success: false,
         message: "Valid account details are required",
       });
+    const bankName = await resolveBankName(bankCode);
     const code = await issueEmailOtp({
       email: user.email,
       userId: userId.toString(),
       purpose: "bank-account",
-      payload: { accountName, accountNumber, bankCode },
+      payload: { accountName, accountNumber, bankCode, bankName },
     });
     await sendOtpEmail(user.email, code, "bank-account");
     return res.status(200).json({
@@ -513,6 +517,7 @@ export const addBankAccount = async (req: Request, res: Response) => {
       accountName,
       accountNumber,
       bankCode,
+      bankName: await resolveBankName(bankCode),
       recipientCode: recipient.recipient_code,
     });
 
@@ -533,8 +538,12 @@ export const addBankAccount = async (req: Request, res: Response) => {
 
 export const getBankAccount = async (req: Request, res: Response) => {
   const bank = await BankAccount.findOne({ user: req.user }).select(
-    "accountName +accountNumber bankCode createdAt updatedAt",
+    "accountName +accountNumber bankCode bankName createdAt updatedAt",
   );
+  if (bank && !bank.bankName) {
+    try { bank.bankName = await resolveBankName(bank.bankCode); await bank.save(); }
+    catch (error) { logError("bank.name_lookup_failed", error); }
+  }
   return res.json({
     success: true,
     data: bank ? maskedBankAccount(bank) : null,
@@ -577,6 +586,7 @@ export const updateBankAccount = async (req: Request, res: Response) => {
       accountName,
       accountNumber,
       bankCode,
+      bankName: await resolveBankName(bankCode),
       recipientCode: recipient.recipient_code,
     });
     await existing.save();
@@ -607,69 +617,6 @@ export const removeBankAccount = async (req: Request, res: Response) => {
       .status(404)
       .json({ success: false, message: "No withdrawal account found" });
   return res.json({ success: true });
-};
-
-interface PaystackBank {
-  id: number;
-  name: string;
-  code: string;
-  active?: boolean;
-  is_deleted?: boolean;
-}
-
-const BANK_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
-let bankCache: { banks: PaystackBank[]; expiresAt: number } | null = null;
-let bankFetchPromise: Promise<PaystackBank[]> | null = null;
-
-const fetchNigerianBanks = async (): Promise<PaystackBank[]> => {
-  if (bankCache && bankCache.expiresAt > Date.now()) return bankCache.banks;
-  if (bankFetchPromise) return bankFetchPromise;
-
-  bankFetchPromise = (async () => {
-    const banks: PaystackBank[] = [];
-    const seenCursors = new Set<string>();
-    let next: string | undefined;
-
-    do {
-      const response = await axios.get("https://api.paystack.co/bank", {
-        headers: {
-          Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
-        },
-        params: {
-          country: "nigeria",
-          currency: "NGN",
-          type: "nuban",
-          perPage: 100,
-          use_cursor: true,
-          ...(next ? { next } : {}),
-        },
-      });
-
-      banks.push(...(response.data.data ?? []));
-      const nextCursor = response.data.meta?.next as string | undefined;
-      if (!nextCursor || seenCursors.has(nextCursor)) break;
-      seenCursors.add(nextCursor);
-      next = nextCursor;
-    } while (next);
-
-    const uniqueBanks = Array.from(
-      new Map(
-        banks
-          .filter((bank) => bank.active !== false && bank.is_deleted !== true)
-          .map((bank) => [bank.code, bank]),
-      ).values(),
-    ).sort((a, b) => a.name.localeCompare(b.name));
-
-    bankCache = {
-      banks: uniqueBanks,
-      expiresAt: Date.now() + BANK_CACHE_TTL_MS,
-    };
-    return uniqueBanks;
-  })().finally(() => {
-    bankFetchPromise = null;
-  });
-
-  return bankFetchPromise;
 };
 
 export const getBanks = async (req: Request, res: Response) => {

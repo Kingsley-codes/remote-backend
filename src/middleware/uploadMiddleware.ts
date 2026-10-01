@@ -53,6 +53,38 @@ const mediaFilter = (
 
 const uploader = (options: multer.Options) => multer({ storage, ...options });
 
+export const uploadWithdrawalReceipt = uploader({
+  limits: { fileSize: MAX_IMAGE_SIZE, files: 1, fields: 0, parts: 1 },
+  fileFilter: (_req, file, callback) => {
+    if (!imageMimeTypes.has(file.mimetype) && file.mimetype !== "application/pdf") {
+      return callback(new Error("Receipt must be a JPEG, PNG, WebP image or PDF"));
+    }
+    callback(null, true);
+  },
+}).single("receipt");
+
+export class InvalidReceiptError extends Error {}
+
+export const uploadReceiptToCloudinary = async (file: Express.Multer.File) => {
+  try {
+    const detected = await fileTypeFromFile(file.path);
+    if (!detected || (!imageMimeTypes.has(detected.mime) && detected.mime !== "application/pdf") || file.size > MAX_IMAGE_SIZE) {
+      throw new InvalidReceiptError("Receipt must be a JPEG, PNG, WebP image or PDF, no larger than 5 MB");
+    }
+    const fileName = `withdrawal-receipt.${detected.ext}`;
+    // Raw assets preserve the original bytes, including PDFs, for email attachments.
+    const result = await cloudinary.uploader.upload(file.path, {
+      folder: "withdrawal-receipts", resource_type: "raw",
+      public_id: `${crypto.randomUUID()}.${detected.ext}`, overwrite: false,
+    });
+    return { url: result.secure_url, publicId: result.public_id, fileName,
+      mimeType: detected.mime, size: file.size, uploadedAt: new Date() };
+  } finally { await removeTemporaryFile(file); }
+};
+
+export const deleteReceiptFromCloudinary = (publicId: string) =>
+  cloudinary.uploader.destroy(publicId, { resource_type: "raw", invalidate: true });
+
 export const uploadProduceImages = uploader({
   limits: { fileSize: MAX_IMAGE_SIZE, files: 3, fields: 20, parts: 25 },
   fileFilter: imageFilter,
@@ -86,6 +118,7 @@ export const uploadPostMedia = uploader({
 ]);
 
 const allUploadedFiles = (req: Request) => {
+  if (req.file) return [req.file];
   if (!req.files) return [];
   return Array.isArray(req.files) ? req.files : Object.values(req.files).flat();
 };

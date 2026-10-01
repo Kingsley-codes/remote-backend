@@ -18,7 +18,7 @@ import {
   getDashboardStats,
 } from "../controllers/adminDashboardController.js";
 import { adminAuthenticate, requireSuperAdmin } from "../middleware/authenticationMiddleware.js";
-import { cleanupUploadedFiles, handleUploadErrors, uploadProducerImages } from "../middleware/uploadMiddleware.js";
+import { cleanupUploadedFiles, handleUploadErrors, uploadProducerImages, uploadWithdrawalReceipt } from "../middleware/uploadMiddleware.js";
 
 import { adminWithdrawBalance } from "../controllers/adminWalletController.js";
 import { approveWithdrawal, getWithdrawalDetails } from "../controllers/manualWithdrawalController.js";
@@ -51,7 +51,7 @@ adminDashboardRouter.patch(
 adminDashboardRouter.get("/payments", adminAuthenticate, getAllPayments);
 adminDashboardRouter.get("/withdrawals", adminAuthenticate, getAllWithdrawals);
 adminDashboardRouter.get("/withdrawals/:withdrawalId", adminAuthenticate, getWithdrawalDetails);
-adminDashboardRouter.post("/withdrawals/:withdrawalId/approve", adminAuthenticate, approveWithdrawal);
+adminDashboardRouter.post("/withdrawals/:withdrawalId/approve", adminAuthenticate, cleanupUploadedFiles, uploadWithdrawalReceipt, handleUploadErrors, approveWithdrawal);
 
 adminDashboardRouter.use("/farmers", adminAuthenticate, requireSuperAdmin);
 adminDashboardRouter.get("/farmers", getAllFarmers);

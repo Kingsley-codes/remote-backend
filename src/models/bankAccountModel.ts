@@ -20,6 +20,7 @@ const bankAccountSchema = new Schema(
       type: String,
       required: true,
     },
+    bankName: { type: String },
     recipientCode: {
       type: String,
       required: true,

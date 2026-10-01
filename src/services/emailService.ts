@@ -1,7 +1,7 @@
 import { google } from "googleapis";
 import { logError } from "../utils/logger.js";
 
-type EmailInput = { to: string; subject: string; html: string; text: string };
+import { buildEmailMessage, type EmailInput, type EmailAttachment } from "../utils/emailMessage.js";
 type OtpEmailPurpose = "signup" | "password-reset" | "bank-account";
 
 const escapeHtml = (value: string) =>
@@ -22,33 +22,15 @@ function gmailClient() {
   return google.gmail({ version: "v1", auth: client });
 }
 
-export async function sendEmail({ to, subject, html, text }: EmailInput) {
+export async function sendEmail(input: EmailInput) {
   const senderEmail = process.env.GMAIL_SENDER_EMAIL;
   if (!senderEmail) throw new Error("GMAIL_SENDER_EMAIL is not configured");
   const senderName = process.env.GMAIL_SENDER_NAME || "Remote Agric";
-  const message = [
-    `From: ${senderName} <${senderEmail}>`,
-    `To: ${to}`,
-    `Subject: ${subject}`,
-    "MIME-Version: 1.0",
-    'Content-Type: multipart/alternative; boundary="remote-agric-boundary"',
-    "",
-    "--remote-agric-boundary",
-    'Content-Type: text/plain; charset="UTF-8"',
-    "",
-    text,
-    "",
-    "--remote-agric-boundary",
-    'Content-Type: text/html; charset="UTF-8"',
-    "",
-    html,
-    "",
-    "--remote-agric-boundary--",
-  ].join("\r\n");
+  const message = buildEmailMessage(input, senderEmail, senderName);
   await gmailClient().users.messages.send({
     userId: "me",
     requestBody: { raw: Buffer.from(message).toString("base64url") },
-  });
+  }, { timeout: 60_000, retry: false });
 }
 
 export async function deliverEmail(input: EmailInput) {
@@ -109,3 +91,14 @@ export const sendAdminWithdrawalEmail = (to: string, name: string, details: {
     html: emailShell("Admin-initiated wallet withdrawal", lines.map(line => "<p>" + escapeHtml(line) + "</p>").join("")),
   });
 };
+
+export async function sendManualWithdrawalEmail(to: string, name: string, details: { transactionID: string; amount: number; event: "requested" | "approved"; receipt?: EmailAttachment }) {
+  const title = details.event === "requested" ? "Withdrawal request received" : "Your withdrawal is complete";
+  const message = details.event === "requested"
+    ? `Your withdrawal request for ${formatNaira(details.amount)} is being processed and will be completed within 24 hours.`
+    : `Your withdrawal of ${formatNaira(details.amount)} has been completed. Your payment receipt is attached.`;
+  await sendEmail({ to, subject: title, text: `Hi ${name}, ${message} Transaction ID: ${details.transactionID}`,
+    html: emailShell(title, `<p>Hi ${escapeHtml(name)},</p><p>${escapeHtml(message)}</p><p>Transaction ID: <strong>${escapeHtml(details.transactionID)}</strong></p>`),
+    ...(details.receipt ? { attachments: [details.receipt] } : {}),
+  });
+}

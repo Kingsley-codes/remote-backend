@@ -7,6 +7,7 @@ import { deleteExpiredNotifications } from "./controllers/notificationController
 import { createServer } from "node:http";
 import { initializeRealtime } from "./realtime.js";
 import { logError, logInfo } from "./utils/logger.js";
+import { deliverWithdrawalEmails } from "./services/withdrawalNotificationService.js";
 
 const dev = process.env.NODE_ENV !== "production";
 
@@ -23,6 +24,8 @@ try {
   logInfo("mongodb.connected");
   await closeExpiredResolvedTickets();
   await deleteExpiredNotifications();
+  void deliverWithdrawalEmails();
+  setInterval(() => void deliverWithdrawalEmails(), 60_000).unref();
   setInterval(() => void closeExpiredResolvedTickets(), 60 * 60 * 1000).unref();
   setInterval(() => void deleteExpiredNotifications(), 60 * 60 * 60 * 1000).unref();
 } catch (error) {

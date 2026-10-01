@@ -45,6 +45,9 @@ export async function consumeEmailOtp({
   purpose: EmailOtpPurpose;
   code: string;
 }) {
+  const normalizedCode = String(code).replace(/[\s-]/g, "");
+  if (!/^\d{6}$/.test(normalizedCode)) return null;
+
   const otp = await EmailOtp.findOne({
     email: email.trim().toLowerCase(),
     purpose,
@@ -53,13 +56,14 @@ export async function consumeEmailOtp({
   })
     .select("+codeHash")
     .sort({ createdAt: -1 });
+
   if (!otp || otp.attempts >= MAX_ATTEMPTS) return null;
-  if (!(await bcrypt.compare(code, otp.codeHash))) {
+  if (!(await bcrypt.compare(normalizedCode, otp.codeHash))) {
     otp.attempts += 1;
     await otp.save();
     return null;
   }
   const payload = otp.payload as Record<string, unknown> | undefined;
   await otp.deleteOne();
-  return payload;
+  return payload ?? {};
 }

@@ -250,10 +250,11 @@ export const resetPassword = async (req: Request, res: Response) => {
         .status(400)
         .json({ status: "fail", message: "Use a strong matching password" });
     const user = await User.findOne({ email: email.trim().toLowerCase() });
+
     if (!user)
       return res
         .status(400)
-        .json({ status: "fail", message: "Invalid or expired reset code" });
+        .json({ status: "fail", message: "User not found" });
     const valid = await consumeEmailOtp({
       email,
       userId: user._id.toString(),

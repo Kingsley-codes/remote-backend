@@ -4,8 +4,10 @@ const notificationSchema = new Schema(
   {
     title: { type: String, required: true, trim: true, maxlength: 120 },
     message: { type: String, required: true, trim: true, maxlength: 1000 },
-    type: { type: String, enum: ["stage-change", "admin"], required: true },
-    produce: { type: Schema.Types.ObjectId, ref: "Produce", required: true, index: true },
+    type: { type: String, enum: ["stage-change", "admin", "withdrawal"], required: true },
+    produce: { type: Schema.Types.ObjectId, ref: "Produce", required: function (this: { type: string }) { return this.type !== "withdrawal"; }, index: true },
+    transaction: { type: Schema.Types.ObjectId, ref: "Transaction" },
+    eventKey: { type: String, unique: true, sparse: true },
     trackId: { type: Schema.Types.ObjectId },
     recipients: [{ type: Schema.Types.ObjectId, ref: "User" }],
     readBy: [{ type: Schema.Types.ObjectId, ref: "User" }],
