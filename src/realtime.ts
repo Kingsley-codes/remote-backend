@@ -21,9 +21,9 @@ export function initializeRealtime(server: HttpServer, origins: string[]) {
         if (!token) continue;
         const decoded = verifyIdentityToken(decodeURIComponent(token), type);
         const owner = type === "admin"
-          ? await Admin.findOne({ _id: decoded.id, status: "active", sessionVersion: decoded.sv }).select("_id")
-          : await User.findOne({ _id: decoded.id, status: "active", sessionVersion: decoded.sv }).select("_id");
-        if (!owner) continue;
+          ? await Admin.findOne({ _id: decoded.id, status: "active" }).select("sessionVersion")
+          : await User.findOne({ _id: decoded.id, status: "active" }).select("sessionVersion");
+        if (!owner || owner.sessionVersion !== decoded.sv) continue;
         socket.data.identity = { id: decoded.id, type };
         return next();
       } catch { /* Try the other account type before treating this as a guest. */ }

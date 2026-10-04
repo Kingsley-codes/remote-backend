@@ -2,7 +2,7 @@ import { Request, Response } from "express";
 import bcrypt from "bcrypt";
 import Admin from "../models/adminModel.js";
 import { LoginRequestBody } from "../interface/allInterfaces.js";
-import { authCookieOptions, signIdentityToken } from "../services/tokenService.js";
+import { authCookieOptions, signIdentityToken, setIdentityCookie } from "../services/tokenService.js";
 import { writeActorAuditSafely } from "../services/auditService.js";
 import { logError } from "../utils/logger.js";
 
@@ -51,7 +51,7 @@ export const adminLogin = async (
     const token = signIdentityToken(admin._id.toString(), "admin", admin.sessionVersion ?? 0);
     admin.password = null;
 
-    res.cookie("admin_token", token, authCookieOptions());
+    setIdentityCookie(res, "admin", token);
     req.admin = admin._id;
     await writeActorAuditSafely(req, { action: "LOGIN", entityType: "ADMIN", entityId: admin.id, details: "Password login" });
 

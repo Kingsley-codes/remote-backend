@@ -14,6 +14,7 @@ import { sendOtpEmail } from "../services/emailService.js";
 import {
   authCookieOptions,
   signIdentityToken,
+  setIdentityCookie,
 } from "../services/tokenService.js";
 import {
   consumeOAuthState,
@@ -351,7 +352,7 @@ export const login = async (
     );
     user.password = null;
 
-    res.cookie("user_token", token, authCookieOptions());
+    setIdentityCookie(res, "user", token);
     req.user = user._id;
     await writeActorAuditSafely(req, {
       action: "LOGIN",
@@ -437,7 +438,7 @@ export const googleAuthCallback = (
             "user",
             record.sessionVersion ?? 0,
           );
-          res.cookie("user_token", token, authCookieOptions());
+          setIdentityCookie(res, "user", token);
           req.user = record._id;
           await writeActorAuditSafely(req, {
             action: "LOGIN",

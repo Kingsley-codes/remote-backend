@@ -132,8 +132,10 @@ export const optionalForumAuthenticate = async (req: Request, res: Response, nex
   try {
     if (req.cookies.admin_token) {
       const decoded = verifyIdentityToken(req.cookies.admin_token, "admin");
-      const admin = await Admin.findOne({ _id: decoded.id, status: "active", sessionVersion: decoded.sv });
-      if (admin) {
+      const admin = await Admin.findOne({ _id: decoded.id, status: "active" });
+      // Hydration applies the schema default to accounts created before
+      // sessionVersion existed, just as the dashboard authentication does.
+      if (admin && admin.sessionVersion === decoded.sv) {
         if (!requireTrustedOrigin(req, res)) return;
         req.admin = admin._id;
         req.adminRole = admin.role;

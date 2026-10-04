@@ -1,5 +1,6 @@
 import jwt, { type SignOptions } from "jsonwebtoken";
 import crypto from "node:crypto";
+import type { Response } from "express";
 
 export type IdentityType = "user" | "admin";
 export type IdentityToken = {
@@ -56,4 +57,12 @@ export const authCookieOptions = () => {
     path: "/",
     maxAge: 7 * 24 * 60 * 60 * 1000,
   };
+};
+
+// Browser sessions are exclusive: switching account types must replace the
+// other HttpOnly cookie on the backend, where it was originally issued.
+export const setIdentityCookie = (res: Response, type: IdentityType, token: string) => {
+  const { maxAge: _maxAge, ...clearOptions } = authCookieOptions();
+  res.clearCookie(type === "admin" ? "user_token" : "admin_token", clearOptions);
+  res.cookie(`${type}_token`, token, authCookieOptions());
 };
