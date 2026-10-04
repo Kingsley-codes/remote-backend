@@ -126,3 +126,20 @@ export const requireSuperAdmin = (req: Request, res: Response, next: NextFunctio
   }
   return next();
 };
+
+// Community supports both account types. A valid admin session takes priority.
+export const optionalForumAuthenticate = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    if (req.cookies.admin_token) {
+      const decoded = verifyIdentityToken(req.cookies.admin_token, "admin");
+      const admin = await Admin.findOne({ _id: decoded.id, status: "active", sessionVersion: decoded.sv });
+      if (admin) {
+        if (!requireTrustedOrigin(req, res)) return;
+        req.admin = admin._id;
+        req.adminRole = admin.role;
+        return next();
+      }
+    }
+  } catch { /* Fall back to the regular user session. */ }
+  return optionalUserAuthenticate(req, res, next);
+};
