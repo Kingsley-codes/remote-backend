@@ -5,9 +5,10 @@ import type { Request, Response } from "express";
 import { closeExpiredResolvedTickets } from "./controllers/ticketController.js";
 import { deleteExpiredNotifications } from "./controllers/notificationController.js";
 import { createServer } from "node:http";
-import { initializeRealtime } from "./realtime.js";
+import { initializeRealtime, refreshForumAccess } from "./realtime.js";
 import { logError, logInfo } from "./utils/logger.js";
 import { deliverWithdrawalEmails } from "./services/withdrawalNotificationService.js";
+import { removeExpiredCommunityRoomAccess } from "./services/communityRoomExpiryService.js";
 
 const dev = process.env.NODE_ENV !== "production";
 
@@ -24,10 +25,18 @@ try {
   logInfo("mongodb.connected");
   await closeExpiredResolvedTickets();
   await deleteExpiredNotifications();
+  const refreshExpiredCommunityRooms = async () => {
+    const rooms = await removeExpiredCommunityRoomAccess();
+    await Promise.all(rooms.map((room) => refreshForumAccess(room)));
+  };
+  await refreshExpiredCommunityRooms();
   void deliverWithdrawalEmails();
   setInterval(() => void deliverWithdrawalEmails(), 60_000).unref();
   setInterval(() => void closeExpiredResolvedTickets(), 60 * 60 * 1000).unref();
   setInterval(() => void deleteExpiredNotifications(), 60 * 60 * 60 * 1000).unref();
+  // Runs once at startup and then every day. An investment is removed only
+  // after its own 30-day grace period, so other active tracks still count.
+  setInterval(() => void refreshExpiredCommunityRooms(), 24 * 60 * 60 * 1000).unref();
 } catch (error) {
   logError("mongodb.connection_failed", error);
   process.exit(1);

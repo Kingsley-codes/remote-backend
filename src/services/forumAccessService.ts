@@ -16,6 +16,12 @@ export async function forumAccess(userId: unknown, adminId: unknown, room: strin
   if (adminId) return { exists: true, canRead: true, canPost: true, restriction: null };
   const user = userId ? await User.findById(userId).select("email").lean() : null;
   const restriction = user ? await ForumRestriction.findOne({ room, email: normalizeForumEmail(user.email) }).lean() : null;
-  const member = Boolean(user && (room === "general" || await Investment.exists({ user: userId, produce: room, status: "ongoing", orderStatus: "confirmed" })));
+  const member = Boolean(user && (room === "general" || await Investment.exists({
+    user: userId,
+    produce: room,
+    status: "ongoing",
+    orderStatus: "confirmed",
+    communityRoomRemovedAt: { $exists: false },
+  })));
   return { exists: true, canRead: (room === "general" || member) && restriction?.kind !== "ban", canPost: member && !restriction, restriction: restriction?.kind ?? null };
 }

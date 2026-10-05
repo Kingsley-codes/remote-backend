@@ -11,6 +11,7 @@ import { ProduceRequestBody } from "../interface/allInterfaces.js";
 import Investment from "../models/investmentModel.js";
 import { createProduceNotification } from "./notificationController.js";
 import { sendProduceStageEmail } from "../services/emailService.js";
+import { scheduleTrackCommunityRoomExpiry } from "../services/communityRoomExpiryService.js";
 
 export const generateProduceID = () =>
   "RAP-" + Math.random().toString(36).substring(2, 10).toUpperCase();
@@ -630,6 +631,9 @@ export const updateTrackStage = async (req: Request, res: Response) => {
       { produce: produceID, "track.id": trackID, status: "ongoing" },
       { stage: track.stage },
     );
+    if (track.stage === "harvesting") {
+      await scheduleTrackCommunityRoomExpiry(produceID, trackID);
+    }
 
     const label = stage.split("-").map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(" ");
     await createProduceNotification({

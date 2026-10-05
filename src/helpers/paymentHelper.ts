@@ -1,4 +1,5 @@
 import { normalizeStage } from "../utils/productionStages.js";
+import { communityRoomAccessEndsAt } from "../services/communityRoomExpiryService.js";
 import crypto from "crypto";
 import { PaystackEventData } from "../interface/allInterfaces.js";
 import Produce from "../models/produceModel.js";
@@ -55,7 +56,12 @@ export const handleChargeSuccess = async (
         throw new Error("Payment provider amount or currency mismatch");
       }
 
-      investment = await Investment.findOne({ payment: settledPayment._id }).session(session);
+      investment = await Investment.findOne({
+        user: settledPayment.user,
+        produce: settledPayment.produce,
+        "track.id": settledPayment.trackId,
+        orderStatus: { $ne: "cancelled" },
+      }).session(session);
       if (settledPayment.status === "completed") {
         if (!investment) throw new Error("Completed payment is missing its investment");
         return;
@@ -70,8 +76,7 @@ export const handleChargeSuccess = async (
       const lockedProduce = await Produce.findOneAndUpdate(
         { _id: settledPayment.produce }, { $inc: { __v: 1 } }, { new: true, session },
       );
-      const duplicate = await Investment.exists({ user: settledPayment.user, produce: settledPayment.produce, "track.id": settledPayment.trackId, orderStatus: { $ne: "cancelled" } }).session(session);
-      if (duplicate || !lockedProduce || units < lockedProduce.minimumUnit || units > (lockedProduce.maximumUnit ?? lockedProduce.totalUnit) || units > lockedProduce.remainingUnit ||
+      if (!lockedProduce || units < lockedProduce.minimumUnit || units > (lockedProduce.maximumUnit ?? lockedProduce.totalUnit) || units > lockedProduce.remainingUnit ||
           ['suspended', 'sold out'].includes(lockedProduce.status) || !lockedProduce.tracks.some(t => String(t._id) === String(settledPayment.trackId) && t.status !== 'closed')) {
         // A provider charge cannot be undone here. Return its full value to the wallet atomically.
         await Wallet.findOneAndUpdate({ user: settledPayment.user }, {
@@ -97,6 +102,11 @@ export const handleChargeSuccess = async (
       const track = produce.tracks.find((item) => String(item._id) === String(settledPayment.trackId));
       if (!track || !settledPayment.startsAt || !settledPayment.endsAt) throw new Error("Payment is missing its selected track schedule");
 
+      if (investment) {
+        investment.units += units;
+        investment.totalPrice += settledPayment.amount;
+        await investment.save({ session });
+      } else {
       const created = await Investment.create([{
         user: settledPayment.user,
         payment: settledPayment._id,
@@ -115,10 +125,14 @@ export const handleChargeSuccess = async (
         track: { id: track._id, name: track.name, startMonth: track.startMonth, endMonth: track.endMonth },
         startsAt: settledPayment.startsAt,
         endsAt: settledPayment.endsAt,
+        communityRoomAccessEndsAt: communityRoomAccessEndsAt(settledPayment.endsAt, normalizeStage(track.stage, produce.category)),
       }], { session });
       investment = created[0]!;
+      }
 
-      await awardReferralCommission(settledPayment.user.toString(), investment._id.toString(), session);
+      if (units === settledPayment.units && investment.payment?.toString() === settledPayment._id.toString()) {
+        await awardReferralCommission(settledPayment.user.toString(), investment._id.toString(), session);
+      }
       await User.findByIdAndUpdate(settledPayment.user, { hasActiveInvestment: true }, { session });
 
       settledPayment.status = "completed";

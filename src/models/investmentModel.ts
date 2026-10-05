@@ -104,6 +104,11 @@ const investmentSchema = new Schema(
     },
     startsAt: { type: Date, required: true },
     endsAt: { type: Date, required: true },
+    // Access is recorded per investment so another active track in the same
+    // produce can continue to grant the user room access.
+    communityRoomAccessEndsAt: { type: Date, index: true },
+    communityRoomHarvestStartedAt: { type: Date },
+    communityRoomRemovedAt: { type: Date, index: true },
     isRollover: { type: Boolean, default: false },
     rolledOverFrom: { type: Schema.Types.ObjectId, ref: "Investment" },
     rolledOverTo: { type: Schema.Types.ObjectId, ref: "Investment" },

@@ -26,6 +26,7 @@ import { sendInvestmentPaymentEmail } from "../services/emailService.js";
 import validator from "validator";
 import { logError, logInfo } from "../utils/logger.js";
 import { getTrackSchedule } from "../utils/investmentTracks.js";
+import { communityRoomAccessEndsAt } from "../services/communityRoomExpiryService.js";
 
 const syncUserActiveInvestmentStatus = async (
   userId: string,
@@ -84,17 +85,8 @@ const handleWalletPayment = async (
     if (!track) throw new Error("TRACK_NOT_FOUND");
     if (track.status === "closed") throw new Error("TRACK_CLOSED");
 
-    // The produce write above serializes competing purchases before this check.
-    if (
-      await Investment.exists({
-        user: userId,
-        produce: produceId,
-        "track.id": trackId,
-        orderStatus: { $ne: "cancelled" },
-      }).session(session)
-    ) {
-      throw new Error("TRACK_ALREADY_INVESTED");
-    }
+    // The produce write above serializes competing purchases before updating a
+    // user's single subscription for this produce track.
     if (Math.round(produce.price * units * 100) !== Math.round(amount * 100))
       throw new Error("OPPORTUNITY_UNAVAILABLE");
     let rolloverSource = null;
@@ -143,8 +135,19 @@ const handleWalletPayment = async (
       { session },
     );
 
-    const newInvestment = await Investment.create(
-      [
+    let newInvestment = await Investment.findOne({
+      user: userId,
+      produce: produceId,
+      "track.id": trackId,
+      orderStatus: { $ne: "cancelled" },
+    }).session(session);
+    if (newInvestment) {
+      newInvestment.units += units;
+      newInvestment.totalPrice += amount;
+      await newInvestment.save({ session });
+    } else {
+      const createdInvestment = await Investment.create(
+        [
         {
           user: userId,
           produce: produceId,
@@ -167,26 +170,29 @@ const handleWalletPayment = async (
           },
           startsAt,
           endsAt,
+          communityRoomAccessEndsAt: communityRoomAccessEndsAt(endsAt, normalizeStage(track.stage, produce.category)),
           isRollover: Boolean(rolloverSource),
           rolledOverFrom: rolloverSource?._id,
         },
-      ],
-      { session },
-    );
+        ],
+        { session },
+      );
+      newInvestment = createdInvestment[0]!;
+    }
 
     if (rolloverSource) {
-      rolloverSource.rolledOverTo = newInvestment[0]!._id;
+      rolloverSource.rolledOverTo = newInvestment._id;
       rolloverSource.rolledOverAt = new Date();
       await rolloverSource.save({ session });
     }
     await syncUserActiveInvestmentStatus(userId, session);
     await awardReferralCommission(
       userId,
-      newInvestment[0]!._id.toString(),
+      newInvestment._id.toString(),
       session,
     );
     await session.commitTransaction();
-    return { paymentID, newInvestment: newInvestment[0]! };
+    return { paymentID, newInvestment };
   } catch (error) {
     await session.abortTransaction();
     throw error;
@@ -219,7 +225,12 @@ const sendExistingInitialization = async (
   }
 
   if (payment.paymentMethod === "wallet") {
-    const investment = await Investment.findOne({ payment: payment._id });
+    const investment = await Investment.findOne({
+      $or: [
+        { payment: payment._id },
+        { user: payment.user, produce: payment.produce, "track.id": payment.trackId, orderStatus: { $ne: "cancelled" } },
+      ],
+    });
     if (!investment) {
       return res.status(409).json({
         success: false,
@@ -429,20 +440,6 @@ export const initializePayment = async (req: Request, res: Response) => {
         .json({ success: false, message: "Requested units are not available" });
     }
 
-    if (
-      await Investment.exists({
-        user: finalUserId,
-        produce: produceId,
-        "track.id": trackId,
-        orderStatus: { $ne: "cancelled" },
-      })
-    ) {
-      return res.status(409).json({
-        success: false,
-        message:
-          "You already have an investment in this track. Please select another track.",
-      });
-    }
     const expectedAmount = produce.price * numericUnits;
 
     if (numericAmount !== expectedAmount) {

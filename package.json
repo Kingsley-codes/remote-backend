@@ -8,7 +8,8 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "test:investment-rules": "tsx --test regression-tests/*.test.ts",
-    "test:forum": "tsx --test regression-tests/forum-moderation.test.ts"
+    "test:forum": "tsx --test regression-tests/forum-moderation.test.ts",
+    "test:community-room-expiry": "tsx --test regression-tests/community-room-expiry.test.ts"
   },
   "keywords": [],
   "author": "",
