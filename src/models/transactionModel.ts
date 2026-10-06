@@ -10,7 +10,12 @@ const transactionSchema = new Schema(
     },
     transactionType: {
       type: String,
-      enum: ["investment-payment", "withdrawal", "referral-reward", "harvest-return"],
+      enum: [
+        "investment-payment",
+        "withdrawal",
+        "referral-reward",
+        "harvest-return",
+      ],
       required: true,
       index: true,
     },
@@ -53,27 +58,36 @@ const transactionSchema = new Schema(
     walletBalanceAfter: { type: Number },
     withdrawalFlow: { type: String, enum: ["manual", "paystack"] },
     withdrawalBankAccount: {
-      type: new Schema({
-        accountName: { type: String, required: true },
-        accountNumber: { type: String, required: true },
-        bankCode: { type: String, required: true },
-        bankName: { type: String },
-      }, { _id: false }),
+      type: new Schema(
+        {
+          accountName: { type: String, required: true },
+          accountNumber: { type: String, required: true },
+          bankCode: { type: String, required: true },
+          bankName: { type: String },
+        },
+        { _id: false },
+      ),
       select: false,
     },
     approvedBy: { type: Schema.Types.ObjectId, ref: "Admin" },
     approvedAt: { type: Date },
     withdrawalReceipt: {
-      type: new Schema({
-        url: { type: String, required: true },
-        publicId: { type: String, required: true },
-        fileName: { type: String, required: true },
-        mimeType: { type: String, required: true },
-        size: { type: Number, required: true },
-        uploadedAt: { type: Date, default: Date.now },
-      }, { _id: false }),
+      type: new Schema(
+        {
+          url: { type: String, required: true },
+          publicId: { type: String, required: true },
+          fileName: { type: String, required: true },
+          mimeType: { type: String, required: true },
+          size: { type: Number, required: true },
+          uploadedAt: { type: Date, default: Date.now },
+        },
+        { _id: false },
+      ),
     },
-    withdrawalEmailStatus: { type: String, enum: ["pending", "sent", "failed"] },
+    withdrawalEmailStatus: {
+      type: String,
+      enum: ["pending", "sent", "failed"],
+    },
     units: {
       type: Number,
       min: 1,

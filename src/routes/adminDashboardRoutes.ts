@@ -1,4 +1,5 @@
 import express from "express";
+import { getAdminTransactions, getAdminTransactionDetails } from "../controllers/adminTransactionController.js";
 import {
   getAllUsers,
   suspendUser,
@@ -24,6 +25,8 @@ import { adminWithdrawBalance } from "../controllers/adminWalletController.js";
 import { approveWithdrawal, getWithdrawalDetails } from "../controllers/manualWithdrawalController.js";
 
 const adminDashboardRouter = express.Router();
+adminDashboardRouter.get("/transactions", adminAuthenticate, getAdminTransactions);
+adminDashboardRouter.get("/transactions/:id", adminAuthenticate, getAdminTransactionDetails);
 adminDashboardRouter.post("/users/:userId/withdraw", adminAuthenticate, adminWithdrawBalance);
 adminDashboardRouter.get("/overview", adminAuthenticate, getDashboardOverview);
 adminDashboardRouter.get('/stats', adminAuthenticate, getDashboardStats);
