@@ -951,10 +951,12 @@ export const getAllWithdrawals = async (req: Request, res: Response) => {
 
     if (
       status &&
-      ["pending", "completed", "failed"].includes(asString(status) ?? "")
+      ["pending", "completed", "cancelled", "failed"].includes(asString(status) ?? "")
     ) {
       filter.status = asString(status);
     }
+
+    if (status === "history") filter.status = { $in: ["completed", "cancelled"] };
 
     if (q) {
       const searchTerm = safeSearchPattern(asString(q));

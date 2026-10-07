@@ -167,6 +167,7 @@ export const getWithdrawalDetails = async (req: Request, res: Response) => {
       .select("+withdrawalBankAccount")
       .populate("user", "firstName lastName email farmerID")
       .populate("approvedBy", "firstName lastName")
+      .populate("cancelledBy", "firstName lastName")
       .lean();
     if (!withdrawal) throw new WithdrawalError(404, "Withdrawal not found");
     if (withdrawal.withdrawalBankAccount && !withdrawal.withdrawalBankAccount.bankName) {
@@ -185,6 +186,54 @@ export const getWithdrawalDetails = async (req: Request, res: Response) => {
     return res
       .status(500)
       .json({ success: false, message: "Unable to load withdrawal details" });
+  }
+};
+
+export const cancelWithdrawal = async (req: Request, res: Response) => {
+  try {
+    if (!req.admin) throw new WithdrawalError(401, "Admin credentials required");
+    if (!mongoose.isObjectIdOrHexString(req.params.withdrawalId))
+      throw new WithdrawalError(400, "Invalid withdrawal ID");
+    const reason = typeof req.body?.reason === "string" ? req.body.reason.trim() : "";
+    if (!reason || reason.length > 1000)
+      throw new WithdrawalError(400, "Provide a cancellation reason between 1 and 1000 characters");
+
+    const session = await mongoose.startSession();
+    try {
+      await session.withTransaction(async () => {
+        const withdrawal = await Transaction.findOne({
+          _id: req.params.withdrawalId, transactionType: "withdrawal",
+        }).session(session);
+        if (!withdrawal) throw new WithdrawalError(404, "Withdrawal not found");
+        if (withdrawal.withdrawalFlow !== "manual")
+          throw new WithdrawalError(409, "Withdrawals from the previous payment flow cannot be manually cancelled");
+        // Repeated requests must not overwrite the original reason or audit record.
+        if (withdrawal.status === "cancelled") return;
+        if (withdrawal.status !== "pending")
+          throw new WithdrawalError(409, "Only pending withdrawals can be cancelled");
+        // Manual requests do not debit the wallet until approval.
+        withdrawal.status = "cancelled";
+        withdrawal.cancellationReason = reason;
+        withdrawal.cancelledBy = req.admin!;
+        withdrawal.cancelledAt = new Date();
+        await withdrawal.save({ session });
+        await writeAuditLog({
+          action: "STATUS_CHANGE", entityType: "WITHDRAWAL",
+          entityId: withdrawal._id.toString(), actorType: "ADMIN",
+          actorId: req.admin!.toString(),
+          details: `Cancelled withdrawal ${withdrawal.transactionID}`,
+          changes: { before: { status: "pending" }, after: { status: "cancelled", cancellationReason: reason } },
+          request: req, session,
+        });
+      });
+    } finally { await session.endSession(); }
+    res.locals.auditRecorded = true;
+    return res.json({ success: true, message: "Withdrawal cancelled" });
+  } catch (error) {
+    if (error instanceof WithdrawalError)
+      return res.status(error.status).json({ success: false, message: error.message });
+    logError("admin.withdrawal_cancellation_failed", error);
+    return res.status(500).json({ success: false, message: "Unable to cancel withdrawal. You can safely retry." });
   }
 };
 

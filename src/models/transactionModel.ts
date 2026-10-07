@@ -71,6 +71,9 @@ const transactionSchema = new Schema(
     },
     approvedBy: { type: Schema.Types.ObjectId, ref: "Admin" },
     approvedAt: { type: Date },
+    cancellationReason: { type: String, trim: true, maxlength: 1000 },
+    cancelledBy: { type: Schema.Types.ObjectId, ref: "Admin" },
+    cancelledAt: { type: Date },
     withdrawalReceipt: {
       type: new Schema(
         {
