@@ -10,12 +10,17 @@ import { awardReferralCommission } from "../services/referralService.js";
 import Transaction from "../models/transactionModel.js";
 import mongoose from "mongoose";
 import { writeAuditLog } from "../services/auditService.js";
-import { logInfo } from "../utils/logger.js";
+import { logInfo, logError } from "../utils/logger.js";
 import { matchesPaystackPaymentAmount } from "../utils/paystackAmount.js";
 import {
   sendInvestmentPaymentEmail,
   sendWithdrawalCompletedEmail,
 } from "../services/emailService.js";
+import {
+  sendMetaPurchase,
+  hashEmail,
+  hashExternalId,
+} from "../services/metaConversionsApi.js";
 
 // Helper function to generate unique IDs
 export const generatePaymentID = () =>
@@ -63,80 +68,138 @@ export const handleChargeSuccess = async (
         orderStatus: { $ne: "cancelled" },
       }).session(session);
       if (settledPayment.status === "completed") {
-        if (!investment) throw new Error("Completed payment is missing its investment");
+        if (!investment)
+          throw new Error("Completed payment is missing its investment");
         return;
       }
 
       if (settledPayment.status === "refunded") return;
 
       const units = settledPayment.units ?? Number(eventData.metadata?.units);
-      if (!Number.isSafeInteger(units) || units <= 0) throw new Error("Invalid settled unit count");
+      if (!Number.isSafeInteger(units) || units <= 0)
+        throw new Error("Invalid settled unit count");
 
       // Lock the produce before checking ownership, including wallet/card races.
       const lockedProduce = await Produce.findOneAndUpdate(
-        { _id: settledPayment.produce }, { $inc: { __v: 1 } }, { new: true, session },
+        { _id: settledPayment.produce },
+        { $inc: { __v: 1 } },
+        { new: true, session },
       );
-      if (!lockedProduce || units < lockedProduce.minimumUnit || units > (lockedProduce.maximumUnit ?? lockedProduce.totalUnit) || units > lockedProduce.remainingUnit ||
-          ['suspended', 'sold out'].includes(lockedProduce.status) || !lockedProduce.tracks.some(t => String(t._id) === String(settledPayment.trackId) && t.status !== 'closed')) {
+      if (
+        !lockedProduce ||
+        units < lockedProduce.minimumUnit ||
+        units > (lockedProduce.maximumUnit ?? lockedProduce.totalUnit) ||
+        units > lockedProduce.remainingUnit ||
+        ["suspended", "sold out"].includes(lockedProduce.status) ||
+        !lockedProduce.tracks.some(
+          (t) =>
+            String(t._id) === String(settledPayment.trackId) &&
+            t.status !== "closed",
+        )
+      ) {
         // A provider charge cannot be undone here. Return its full value to the wallet atomically.
-        await Wallet.findOneAndUpdate({ user: settledPayment.user }, {
-          $inc: { balance: settledPayment.amount },
-          $setOnInsert: { walletId: `WAL-${settledPayment.user.toString().slice(-8).toUpperCase()}`, currency: 'NGN' },
-        }, { upsert: true, session });
-        settledPayment.status = 'refunded';
-        settledPayment.settlementNote = 'This track is already owned or no longer available for these units. Your full payment has been credited to your wallet.';
+        await Wallet.findOneAndUpdate(
+          { user: settledPayment.user },
+          {
+            $inc: { balance: settledPayment.amount },
+            $setOnInsert: {
+              walletId: `WAL-${settledPayment.user.toString().slice(-8).toUpperCase()}`,
+              currency: "NGN",
+            },
+          },
+          { upsert: true, session },
+        );
+        settledPayment.status = "refunded";
+        settledPayment.settlementNote =
+          "This track is already owned or no longer available for these units. Your full payment has been credited to your wallet.";
         await settledPayment.save({ session });
         return;
       }
       const produce = await Produce.findOneAndUpdate(
         {
           _id: settledPayment.produce,
-          status: { $nin: ['suspended', 'sold out'] },
+          status: { $nin: ["suspended", "sold out"] },
           remainingUnit: { $gte: units },
-          tracks: { $elemMatch: { _id: settledPayment.trackId, status: { $ne: 'closed' } } },
+          tracks: {
+            $elemMatch: {
+              _id: settledPayment.trackId,
+              status: { $ne: "closed" },
+            },
+          },
         },
         { $inc: { remainingUnit: -units } },
         { new: true, session },
       );
-      if (!produce) throw new Error("Insufficient units to settle this paid transaction");
-      const track = produce.tracks.find((item) => String(item._id) === String(settledPayment.trackId));
-      if (!track || !settledPayment.startsAt || !settledPayment.endsAt) throw new Error("Payment is missing its selected track schedule");
+      if (!produce)
+        throw new Error("Insufficient units to settle this paid transaction");
+      const track = produce.tracks.find(
+        (item) => String(item._id) === String(settledPayment.trackId),
+      );
+      if (!track || !settledPayment.startsAt || !settledPayment.endsAt)
+        throw new Error("Payment is missing its selected track schedule");
 
       if (investment) {
         investment.units += units;
         investment.totalPrice += settledPayment.amount;
         await investment.save({ session });
       } else {
-      const created = await Investment.create([{
-        user: settledPayment.user,
-        payment: settledPayment._id,
-        produce: settledPayment.produce,
-        orderID: generateOrderID(),
-        units,
-        title: produce.title,
-        totalPrice: settledPayment.amount,
-        customerEmail: settledPayment.userEmail,
-        orderStatus: "confirmed",
-        transactionRef: settledPayment.transactionRef,
-        duration: produce.duration,
-        referralBonus: settledPayment.referralBonus ?? produce.referralBonus ?? 50,
-        profit: produce.profit,
-        stage: normalizeStage(track.stage, produce.category),
-        track: { id: track._id, name: track.name, startMonth: track.startMonth, endMonth: track.endMonth },
-        startsAt: settledPayment.startsAt,
-        endsAt: settledPayment.endsAt,
-        communityRoomAccessEndsAt: communityRoomAccessEndsAt(settledPayment.endsAt, normalizeStage(track.stage, produce.category)),
-      }], { session });
-      investment = created[0]!;
+        const created = await Investment.create(
+          [
+            {
+              user: settledPayment.user,
+              payment: settledPayment._id,
+              produce: settledPayment.produce,
+              orderID: generateOrderID(),
+              units,
+              title: produce.title,
+              totalPrice: settledPayment.amount,
+              customerEmail: settledPayment.userEmail,
+              orderStatus: "confirmed",
+              transactionRef: settledPayment.transactionRef,
+              duration: produce.duration,
+              referralBonus:
+                settledPayment.referralBonus ?? produce.referralBonus ?? 50,
+              profit: produce.profit,
+              stage: normalizeStage(track.stage, produce.category),
+              track: {
+                id: track._id,
+                name: track.name,
+                startMonth: track.startMonth,
+                endMonth: track.endMonth,
+              },
+              startsAt: settledPayment.startsAt,
+              endsAt: settledPayment.endsAt,
+              communityRoomAccessEndsAt: communityRoomAccessEndsAt(
+                settledPayment.endsAt,
+                normalizeStage(track.stage, produce.category),
+              ),
+            },
+          ],
+          { session },
+        );
+        investment = created[0]!;
       }
 
-      if (units === settledPayment.units && investment.payment?.toString() === settledPayment._id.toString()) {
-        await awardReferralCommission(settledPayment.user.toString(), investment._id.toString(), session);
+      if (
+        units === settledPayment.units &&
+        investment.payment?.toString() === settledPayment._id.toString()
+      ) {
+        await awardReferralCommission(
+          settledPayment.user.toString(),
+          investment._id.toString(),
+          session,
+        );
       }
-      await User.findByIdAndUpdate(settledPayment.user, { hasActiveInvestment: true }, { session });
+      await User.findByIdAndUpdate(
+        settledPayment.user,
+        { hasActiveInvestment: true },
+        { session },
+      );
 
       settledPayment.status = "completed";
-      settledPayment.date = eventData.paid_at ? new Date(eventData.paid_at) : new Date();
+      settledPayment.date = eventData.paid_at
+        ? new Date(eventData.paid_at)
+        : new Date();
       await settledPayment.save({ session });
       await writeAuditLog({
         action: "PAYMENT_SETTLED",
@@ -157,10 +220,48 @@ export const handleChargeSuccess = async (
 
   if (newlySettled && payment) {
     const settled = payment as InstanceType<typeof Transaction>;
-    const investor = await User.findById(settled.user).select("firstName email").lean();
+
+    const investor = await User.findById(settled.user)
+      .select("firstName email")
+      .lean();
+
     if (investor?.email) {
-      void sendInvestmentPaymentEmail(investor.email, investor.firstName, emailTitle, settled.amount);
+      void sendInvestmentPaymentEmail(
+        investor.email,
+        investor.firstName,
+        emailTitle,
+        settled.amount,
+      );
     }
+
+    const purchaseEventId = `purchase_${settled.paymentID}`;
+
+    void sendMetaPurchase({
+      eventId: purchaseEventId,
+
+      eventSourceUrl: settled.transactionRef
+        ? `https://remoteagricng.com/checkout/verifyPayment?reference=${encodeURIComponent(
+            settled.transactionRef,
+          )}`
+        : "https://remoteagricng.com",
+
+      userData: {
+        ...(investor?.email ? { em: [hashEmail(investor.email)] } : {}),
+
+        external_id: [hashExternalId(settled.user.toString())],
+      },
+
+      customData: {
+        value: settled.amount,
+        currency: settled.currency ?? "NGN",
+        content_name: emailTitle,
+        content_type: "product",
+        ...(settled.produce ? { content_ids: [String(settled.produce)] } : {}),
+        num_items: settled.units ?? 1,
+      },
+    }).catch((error) => {
+      logError("meta.purchase_capi_failed", error);
+    });
   }
   return { payment, investment, newlySettled };
 };
@@ -182,14 +283,20 @@ export const handleChargeFailed = async (eventData: PaystackEventData) => {
 
 export const handleTransferSuccess = async (data: any) => {
   const reference = data.reference;
-  if (typeof reference !== "string" || !reference.trim()) throw new Error("Missing transfer reference");
+  if (typeof reference !== "string" || !reference.trim())
+    throw new Error("Missing transfer reference");
   const session = await Transaction.startSession();
   let withdrawal: any = null;
 
   try {
     await session.withTransaction(async () => {
       withdrawal = await Transaction.findOneAndUpdate(
-          { transactionRef: reference, transactionType: "withdrawal", withdrawalFlow: { $ne: "manual" }, status: "pending" },
+        {
+          transactionRef: reference,
+          transactionType: "withdrawal",
+          withdrawalFlow: { $ne: "manual" },
+          status: "pending",
+        },
         { status: "completed", transferInitiationStatus: "submitted" },
         { new: true, session },
       );
@@ -215,19 +322,29 @@ export const handleTransferSuccess = async (data: any) => {
     .select("firstName email")
     .lean();
   if (user?.email) {
-    void sendWithdrawalCompletedEmail(user.email, user.firstName, withdrawal.amount);
+    void sendWithdrawalCompletedEmail(
+      user.email,
+      user.firstName,
+      withdrawal.amount,
+    );
   }
 };
 
 export const handleTransferFailed = async (data: any) => {
   const reference = data.reference;
-  if (typeof reference !== "string" || !reference.trim()) throw new Error("Missing transfer reference");
+  if (typeof reference !== "string" || !reference.trim())
+    throw new Error("Missing transfer reference");
   const session = await Transaction.startSession();
 
   try {
     await session.withTransaction(async () => {
       const withdrawal = await Transaction.findOneAndUpdate(
-          { transactionRef: reference, transactionType: "withdrawal", withdrawalFlow: { $ne: "manual" }, status: "pending" },
+        {
+          transactionRef: reference,
+          transactionType: "withdrawal",
+          withdrawalFlow: { $ne: "manual" },
+          status: "pending",
+        },
         { status: "failed", transferInitiationStatus: "rejected" },
         { new: true, session },
       );

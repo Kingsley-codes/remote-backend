@@ -27,6 +27,11 @@ import validator from "validator";
 import { logError, logInfo } from "../utils/logger.js";
 import { getTrackSchedule } from "../utils/investmentTracks.js";
 import { communityRoomAccessEndsAt } from "../services/communityRoomExpiryService.js";
+import {
+  sendMetaPurchase,
+  hashEmail,
+  hashExternalId,
+} from "../services/metaConversionsApi.js";
 
 const syncUserActiveInvestmentStatus = async (
   userId: string,
@@ -148,32 +153,35 @@ const handleWalletPayment = async (
     } else {
       const createdInvestment = await Investment.create(
         [
-        {
-          user: userId,
-          produce: produceId,
-          orderID: generateOrderID(),
-          payment: newPayment[0]!._id,
-          title: produce.title,
-          units,
-          totalPrice: amount,
-          orderStatus: "confirmed",
-          customerEmail: email,
-          duration: produce.duration,
-          referralBonus: produce.referralBonus ?? 50,
-          profit: rolloverSource ? produce.rolloverProfit : produce.profit,
-          stage: normalizeStage(track.stage, produce.category),
-          track: {
-            id: track._id,
-            name: track.name,
-            startMonth: track.startMonth,
-            endMonth: track.endMonth,
+          {
+            user: userId,
+            produce: produceId,
+            orderID: generateOrderID(),
+            payment: newPayment[0]!._id,
+            title: produce.title,
+            units,
+            totalPrice: amount,
+            orderStatus: "confirmed",
+            customerEmail: email,
+            duration: produce.duration,
+            referralBonus: produce.referralBonus ?? 50,
+            profit: rolloverSource ? produce.rolloverProfit : produce.profit,
+            stage: normalizeStage(track.stage, produce.category),
+            track: {
+              id: track._id,
+              name: track.name,
+              startMonth: track.startMonth,
+              endMonth: track.endMonth,
+            },
+            startsAt,
+            endsAt,
+            communityRoomAccessEndsAt: communityRoomAccessEndsAt(
+              endsAt,
+              normalizeStage(track.stage, produce.category),
+            ),
+            isRollover: Boolean(rolloverSource),
+            rolledOverFrom: rolloverSource?._id,
           },
-          startsAt,
-          endsAt,
-          communityRoomAccessEndsAt: communityRoomAccessEndsAt(endsAt, normalizeStage(track.stage, produce.category)),
-          isRollover: Boolean(rolloverSource),
-          rolledOverFrom: rolloverSource?._id,
-        },
         ],
         { session },
       );
@@ -228,7 +236,12 @@ const sendExistingInitialization = async (
     const investment = await Investment.findOne({
       $or: [
         { payment: payment._id },
-        { user: payment.user, produce: payment.produce, "track.id": payment.trackId, orderStatus: { $ne: "cancelled" } },
+        {
+          user: payment.user,
+          produce: payment.produce,
+          "track.id": payment.trackId,
+          orderStatus: { $ne: "cancelled" },
+        },
       ],
     });
     if (!investment) {
@@ -464,6 +477,29 @@ export const initializePayment = async (req: Request, res: Response) => {
           requestHash,
           rolloverInvestmentId ? String(rolloverInvestmentId) : undefined,
         );
+
+        void sendMetaPurchase({
+          eventId: `purchase_${paymentID}`,
+
+          eventSourceUrl: "https://remoteagricng.com/checkout",
+
+          userData: {
+            em: [hashEmail(email)],
+            external_id: [hashExternalId(finalUserIdString)],
+          },
+
+          customData: {
+            value: numericAmount,
+            currency: "NGN",
+            content_name: produce.title,
+            content_type: "product",
+            content_ids: [String(produce._id)],
+            num_items: numericUnits,
+          },
+        }).catch((error) => {
+          logError("meta.purchase_capi_failed", error);
+        });
+
         void sendInvestmentPaymentEmail(
           email,
           userFirstName || "Investor",
@@ -763,11 +799,22 @@ export const handleWebhook = async (req: Request, res: Response) => {
     logInfo("paystack.webhook_received", {
       eventType: String(event.event),
       reference: String(eventData.reference),
-      ...(String(event.event).startsWith("transfer.") ? {
-        transferStatus: typeof eventData.status === "string" ? eventData.status : undefined,
-        transferCode: typeof eventData.transfer_code === "string" ? eventData.transfer_code : undefined,
-        failureReason: typeof eventData.failure_reason === "string" ? eventData.failure_reason : undefined,
-      } : {}),
+      ...(String(event.event).startsWith("transfer.")
+        ? {
+            transferStatus:
+              typeof eventData.status === "string"
+                ? eventData.status
+                : undefined,
+            transferCode:
+              typeof eventData.transfer_code === "string"
+                ? eventData.transfer_code
+                : undefined,
+            failureReason:
+              typeof eventData.failure_reason === "string"
+                ? eventData.failure_reason
+                : undefined,
+          }
+        : {}),
     });
 
     switch (event.event) {
