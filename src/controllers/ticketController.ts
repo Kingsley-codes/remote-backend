@@ -5,8 +5,18 @@ import { uploadToCloudinary } from "../middleware/uploadMiddleware.js";
 import { emitTicketUpdate } from "../realtime.js";
 import { sendPush } from "../services/pushService.js";
 import { logError } from "../utils/logger.js";
+import { ticketFilters, TicketFilterError } from "../utils/ticketFilters.js";
 
 const DAY = 24 * 60 * 60 * 1000;
+
+async function getMonthlyTicketStats(filter: Record<string, unknown>) {
+  const [total, open, resolved] = await Promise.all([
+    Ticket.countDocuments(filter),
+    Ticket.countDocuments({ ...filter, status: "open" }),
+    Ticket.countDocuments({ ...filter, status: { $in: ["resolved", "closed"] } }),
+  ]);
+  return { total, open, resolved };
+}
 
 export async function closeExpiredResolvedTickets() {
   const cutoff = new Date(Date.now() - 3 * DAY);
@@ -36,6 +46,9 @@ async function attachments(req: Request) {
 }
 
 function fail(res: Response, error: unknown) {
+  if (error instanceof TicketFilterError) {
+    return res.status(400).json({ status: "fail", message: error.message });
+  }
   logError("ticket.request_failed", error);
   return res.status(500).json({ status: "error", message: "Unable to process ticket request" });
 }
@@ -65,9 +78,13 @@ export const createTicket = async (req: Request, res: Response) => {
 
 export const getUserTickets = async (req: Request, res: Response) => {
   try {
+    const filters = ticketFilters(req.query, false);
     await closeExpiredResolvedTickets();
-    const tickets = await Ticket.find({ user: req.user }).sort({ lastMessageAt: -1 }).select("-messages");
-    return res.json({ status: "success", data: { tickets } });
+    const [tickets, stats] = await Promise.all([
+      Ticket.find({ user: req.user, ...filters.table }).sort({ lastMessageAt: -1 }).select("-messages"),
+      getMonthlyTicketStats({ user: req.user, ...filters.stats }),
+    ]);
+    return res.json({ status: "success", data: { tickets, stats } });
   } catch (error) { return fail(res, error); }
 };
 
@@ -104,11 +121,13 @@ export const addUserMessage = async (req: Request, res: Response) => {
 
 export const getAdminTickets = async (req: Request, res: Response) => {
   try {
+    const filters = ticketFilters(req.query, true);
     await closeExpiredResolvedTickets();
-    const status = typeof req.query.status === "string" ? req.query.status : "open";
-    const filter = status === "all" ? {} : { status };
-    const tickets = await Ticket.find(filter).sort({ lastMessageAt: -1 }).populate("user", "firstName lastName email profilePhoto").select("-messages");
-    return res.json({ status: "success", data: { tickets } });
+    const [tickets, stats] = await Promise.all([
+      Ticket.find(filters.table).sort({ lastMessageAt: -1 }).populate("user", "firstName lastName email profilePhoto").select("-messages"),
+      getMonthlyTicketStats(filters.stats),
+    ]);
+    return res.json({ status: "success", data: { tickets, stats } });
   } catch (error) { return fail(res, error); }
 };
 
