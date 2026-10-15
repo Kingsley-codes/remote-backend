@@ -39,6 +39,7 @@ export const registerUser = async (
       email,
       password,
       confirmPassword,
+      phone: requestedPhone,
       referralCode,
     } = req.body;
 
@@ -48,6 +49,11 @@ export const registerUser = async (
         status: "fail",
         message: "All fields are required",
       });
+    }
+
+    const phone = typeof requestedPhone === "string" ? requestedPhone.trim().replace(/[\s().-]/g, "") : "";
+    if (!phone || !validator.isMobilePhone(phone, "any")) {
+      return res.status(400).json({ status: "fail", message: "Enter a valid phone number, including your country code." });
     }
 
     // Check if passwords match
@@ -106,6 +112,7 @@ export const registerUser = async (
       payload: {
         firstName,
         lastName,
+        phone,
         password: await bcrypt.hash(password, 12),
         referralCode: referralCode?.trim().toUpperCase() || undefined,
       },
@@ -148,7 +155,8 @@ export const verifySignupOtp = async (req: Request, res: Response) => {
         message: "Invalid or expired verification code",
       });
 
-    const { firstName, lastName, password, referralCode } = payload as {
+    const { firstName, lastName, phone, password, referralCode } = payload as {
+      phone?: string;
       firstName: string;
       lastName: string;
       password: string;
@@ -168,6 +176,7 @@ export const verifySignupOtp = async (req: Request, res: Response) => {
       password,
       firstName,
       lastName,
+      phone,
       farmerID: generateUSerID(),
       referredBy: referrer?._id,
       isVerified: true,

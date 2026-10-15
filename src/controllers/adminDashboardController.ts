@@ -235,6 +235,7 @@ export const getAllUsers = async (
         { firstName: { $regex: safeQuery, $options: "i" } },
         { lastName: { $regex: safeQuery, $options: "i" } },
         { email: { $regex: safeQuery, $options: "i" } },
+        { phone: { $regex: safeQuery, $options: "i" } },
         { farmerID: { $regex: safeQuery, $options: "i" } },
       ];
     }

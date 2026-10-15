@@ -305,6 +305,7 @@ export const initializePayment = async (req: Request, res: Response) => {
       address,
       paymentMethod,
       email: requestedEmail,
+      phone: requestedPhone,
       produceId,
       amount,
       units,
@@ -358,6 +359,16 @@ export const initializePayment = async (req: Request, res: Response) => {
         return res
           .status(401)
           .json({ success: false, message: "Unauthorized" });
+      if (requestedPhone !== undefined && requestedPhone !== "") {
+        const phone = typeof requestedPhone === "string" ? requestedPhone.trim().replace(/[\s().-]/g, "") : "";
+        if (!phone || !validator.isMobilePhone(phone, "any")) {
+          return res.status(400).json({ success: false, message: "Enter a valid phone number, including your country code." });
+        }
+        if (user.phone !== phone) {
+          user.phone = phone;
+          await user.save();
+        }
+      }
     } else {
       const email = String(requestedEmail ?? "")
         .trim()
@@ -370,12 +381,18 @@ export const initializePayment = async (req: Request, res: Response) => {
         });
       }
 
+      const phone = typeof requestedPhone === "string" ? requestedPhone.trim().replace(/[\s().-]/g, "") : "";
+      if (!phone || !validator.isMobilePhone(phone, "any")) {
+        return res.status(400).json({ success: false, message: "Enter a valid phone number, including your country code." });
+      }
+
       user = await User.findOne({ email });
       if (!user) {
         user = await User.create({
           firstName: String(firstName).trim(),
           lastName: String(lastName).trim(),
           email,
+          phone,
           address: String(address).trim(),
           farmerID: generateUSerID(),
         });

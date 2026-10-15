@@ -59,7 +59,7 @@ export const updateUserProfile = async (req: Request, res: Response) => {
     const updates = {
       firstName: String(req.body.firstName ?? "").trim(),
       lastName: String(req.body.lastName ?? "").trim(),
-      phone: String(req.body.phone ?? "").trim(),
+      phone: String(req.body.phone ?? "").trim().replace(/[\s().-]/g, ""),
       address: String(req.body.address ?? "").trim(),
       gender: req.body.gender === "male" || req.body.gender === "female" ? req.body.gender : undefined,
     };

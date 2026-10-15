@@ -4,6 +4,7 @@ export interface LoginRequestBody {
 }
 
 export interface RegisterRequestBody {
+  phone: string;
   firstName: string;
   lastName: string;
   email: string;
