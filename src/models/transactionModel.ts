@@ -11,7 +11,7 @@ const transactionSchema = new Schema(
     transactionType: {
       type: String,
       enum: [
-        "investment-payment",
+        "subscription-payment",
         "withdrawal",
         "referral-reward",
         "harvest-return",

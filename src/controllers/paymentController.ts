@@ -120,7 +120,7 @@ const handleWalletPayment = async (
       [
         {
           user: userId,
-          transactionType: "investment-payment",
+          transactionType: "subscription-payment",
           transactionID: paymentID,
           paymentID,
           produce: produceId,
@@ -331,13 +331,13 @@ export const initializePayment = async (req: Request, res: Response) => {
     ) {
       return res.status(400).json({
         success: false,
-        message: "Invalid payment amount or investment units",
+        message: "Invalid payment amount or subscription units",
       });
     }
     if (rolloverInvestmentId && paymentMethod !== "wallet") {
       return res.status(400).json({
         success: false,
-        message: "Rollover investments must be paid from your Agro Wallet",
+        message: "Rollover subscription must be paid from your Agro Wallet",
       });
     }
     if (paymentMethod !== "card" && paymentMethod !== "wallet") {
@@ -360,9 +360,15 @@ export const initializePayment = async (req: Request, res: Response) => {
           .status(401)
           .json({ success: false, message: "Unauthorized" });
       if (requestedPhone !== undefined && requestedPhone !== "") {
-        const phone = typeof requestedPhone === "string" ? requestedPhone.trim().replace(/[\s().-]/g, "") : "";
+        const phone =
+          typeof requestedPhone === "string"
+            ? requestedPhone.trim().replace(/[\s().-]/g, "")
+            : "";
         if (!phone || !validator.isMobilePhone(phone, "any")) {
-          return res.status(400).json({ success: false, message: "Enter a valid phone number, including your country code." });
+          return res.status(400).json({
+            success: false,
+            message: "Enter a valid phone number, including your country code.",
+          });
         }
         if (user.phone !== phone) {
           user.phone = phone;
@@ -381,9 +387,15 @@ export const initializePayment = async (req: Request, res: Response) => {
         });
       }
 
-      const phone = typeof requestedPhone === "string" ? requestedPhone.trim().replace(/[\s().-]/g, "") : "";
+      const phone =
+        typeof requestedPhone === "string"
+          ? requestedPhone.trim().replace(/[\s().-]/g, "")
+          : "";
       if (!phone || !validator.isMobilePhone(phone, "any")) {
-        return res.status(400).json({ success: false, message: "Enter a valid phone number, including your country code." });
+        return res.status(400).json({
+          success: false,
+          message: "Enter a valid phone number, including your country code.",
+        });
       }
 
       user = await User.findOne({ email });
@@ -541,11 +553,12 @@ export const initializePayment = async (req: Request, res: Response) => {
         }
         const messages: Record<string, string> = {
           INSUFFICIENT_WALLET_BALANCE: "Insufficient Agro Wallet balance",
-          ROLLOVER_NOT_ELIGIBLE: "This investment is not eligible for rollover",
+          ROLLOVER_NOT_ELIGIBLE:
+            "This subscription is not eligible for rollover",
           OPPORTUNITY_UNAVAILABLE:
             "This opportunity is closed or the requested units are unavailable",
           TRACK_ALREADY_INVESTED:
-            "You already have an investment in this track. Please select another track.",
+            "You already have a subscription in this track. Please select another track.",
           TRACK_NOT_FOUND: "Track not found",
         };
         const message = messages[error?.message];
@@ -567,7 +580,7 @@ export const initializePayment = async (req: Request, res: Response) => {
       try {
         payment = await Transaction.create({
           user: finalUserId,
-          transactionType: "investment-payment",
+          transactionType: "subscription-payment",
           transactionID: paymentID,
           paymentID,
           userEmail: email,
