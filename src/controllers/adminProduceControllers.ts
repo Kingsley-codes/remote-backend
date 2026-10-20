@@ -345,7 +345,7 @@ export const editProduce = async (
     if (description) updatedProduce.description = description;
     if (category && category !== updatedProduce.category) {
       if (await Investment.exists({ produce: produceId })) {
-        return res.status(409).json({ message: "Category cannot change after investments have been created" });
+        return res.status(409).json({ message: "Category cannot change after subscriptions have been created" });
       }
       updatedProduce.category = category;
       for (const track of updatedProduce.tracks) {
@@ -581,7 +581,7 @@ export const updateProduceStage = async (req: Request, res: Response) => {
       } | null;
       if (user?._id && user.email) {
         recipients.set(user._id.toString(), {
-          firstName: user.firstName || "Investor",
+          firstName: user.firstName || "Farmer",
           email: user.email,
         });
       }
@@ -654,7 +654,7 @@ export const updateTrackStage = async (req: Request, res: Response) => {
     const recipients = new Map<string, { firstName: string; email: string }>();
     for (const investment of investments) {
       const user = investment.user as unknown as { _id?: { toString(): string }; firstName?: string; email?: string } | null;
-      if (user?._id && user.email) recipients.set(user._id.toString(), { firstName: user.firstName || "Investor", email: user.email });
+      if (user?._id && user.email) recipients.set(user._id.toString(), { firstName: user.firstName || "Farmer", email: user.email });
     }
     await Promise.all([...recipients.values()].map((user) =>
       sendProduceStageEmail(user.email, user.firstName, `${produce.title} (${track.name})`, label),
@@ -688,7 +688,7 @@ export const updateTrackStatus = async (req: Request, res: Response) => {
     await produce.save();
     return res.json({
       success: true,
-      message: status === 'closed' ? 'Track closed to new investments' : 'Track opened for investment',
+      message: status === 'closed' ? 'Track closed to new subscriptions' : 'Track opened for subscriptions',
       data: { track },
     });
   } catch (error) {
@@ -776,7 +776,7 @@ export const deleteProduceTrack = async (req: Request, res: Response) => {
     if (await Investment.exists({ produce: produceID, "track.id": trackID })) {
       return res.status(409).json({
         success: false,
-        message: "This track cannot be deleted because it already has investments",
+        message: "This track cannot be deleted because it already has subscriptions",
       });
     }
 

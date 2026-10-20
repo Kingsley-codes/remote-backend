@@ -69,7 +69,7 @@ export const handleChargeSuccess = async (
       }).session(session);
       if (settledPayment.status === "completed") {
         if (!investment)
-          throw new Error("Completed payment is missing its investment");
+          throw new Error("Completed payment is missing its subscription");
         return;
       }
 

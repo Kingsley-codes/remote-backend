@@ -155,7 +155,7 @@ export const getUserTransactionHistory = async (
               type: "investment-payment" as const,
               reference: transaction.transactionRef,
               transactionID: transaction.transactionID,
-              title: "Farm investment",
+              title: "Farm subscription",
               subtitle: `${produce?.produceName || produce?.title || "Farm ownership"}${
                 transaction.paymentMethod
                   ? ` · ${transaction.paymentMethod}`

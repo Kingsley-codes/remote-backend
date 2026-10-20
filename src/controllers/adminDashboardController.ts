@@ -190,7 +190,7 @@ export const getDashboardStats = async (req: Request, res: Response) => {
         opportunities: {
           active: activeOpportunities,
           listingValue: listingValue[0]?.total ?? 0,
-          mostPopular: popular[0]?._id ?? "No investments yet",
+          mostPopular: popular[0]?._id ?? "No subscriptions yet",
         },
       },
     });

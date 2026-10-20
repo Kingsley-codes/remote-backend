@@ -458,14 +458,14 @@ export const initializePayment = async (req: Request, res: Response) => {
       return res.status(409).json({
         success: false,
         code: "TRACK_CLOSED",
-        message: "This track is closed to new investments",
+        message: "This track is closed to new subscriptions",
       });
     }
     const schedule = getTrackSchedule(track.startMonth, produce.duration);
     if (produce.status === "suspended" || produce.status === "sold out") {
       return res.status(409).json({
         success: false,
-        message: "This opportunity is closed to new investments",
+        message: "This opportunity is closed to new subscriptions",
       });
     }
 
@@ -531,7 +531,7 @@ export const initializePayment = async (req: Request, res: Response) => {
 
         void sendInvestmentPaymentEmail(
           email,
-          userFirstName || "Investor",
+          userFirstName || "Farmer",
           produce.title,
           numericAmount,
         );

@@ -60,7 +60,7 @@ export async function sendOtpEmail(to: string, code: string, purpose: OtpEmailPu
 }
 
 export const sendInvestmentPaymentEmail = (to: string, name: string, produceTitle: string, amount: number) =>
-  deliverEmail({ to, subject: "Your farm investment is confirmed", text: `Hi ${name}, your ${formatNaira(amount)} investment in ${produceTitle} was successful.`, html: emailShell("Investment confirmed", `<p>Hi ${escapeHtml(name)},</p><p>Your investment of <strong>${formatNaira(amount)}</strong> in <strong>${escapeHtml(produceTitle)}</strong> is confirmed.</p>`) });
+  deliverEmail({ to, subject: "Your farm subscription is confirmed", text: `Hi ${name}, your ${formatNaira(amount)} subscription to ${produceTitle} was successful.`, html: emailShell("Subscription confirmed", `<p>Hi ${escapeHtml(name)},</p><p>Your subscription payment of <strong>${formatNaira(amount)}</strong> for <strong>${escapeHtml(produceTitle)}</strong> is confirmed.</p>`) });
 
 export const sendProduceStageEmail = (to: string, name: string, produceTitle: string, stage: string) =>
   deliverEmail({ to, subject: `${produceTitle} has moved to ${stage}`, text: `Hi ${name}, ${produceTitle} has moved to the ${stage} stage.`, html: emailShell("Farm stage updated", `<p>Hi ${escapeHtml(name)},</p><p><strong>${escapeHtml(produceTitle)}</strong> has moved to the <strong>${escapeHtml(stage)}</strong> stage.</p>`) });
