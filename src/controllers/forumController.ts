@@ -76,6 +76,25 @@ export const getRestrictions = async (_req: Request, res: Response) => {
   return res.json({ restrictions });
 };
 
+export const getRoomMemberDetails = async (req: Request, res: Response) => {
+  if (!req.admin) return res.status(403).json({ message: "Admin access required" });
+  const room = String(req.params.room);
+  const userId = String(req.params.userId);
+  if (!validForumRoom(room) || !isValidObjectId(userId)) return res.status(400).json({ message: "Invalid room or user" });
+  if (!(await forumAccess(null, req.admin, room)).exists) return res.status(404).json({ message: "Room not found" });
+  // Historical senders remain inspectable even after their room access expires.
+  if (!await ForumMessage.exists({ ...roomFilter(room), author: userId, authorModel: "User" })) {
+    return res.status(404).json({ message: "Member has no messages in this room" });
+  }
+  const user = await User.findById(userId).select("firstName lastName username email phone").lean();
+  if (!user) return res.status(404).json({ message: "This member's account is no longer available" });
+  const investments = await Investment.find({ user: userId, status: "ongoing", orderStatus: "confirmed" })
+    .select("title orderID units totalPrice stage track.name startsAt endsAt")
+    .sort({ createdAt: -1 }).lean();
+  res.setHeader("Cache-Control", "no-store");
+  return res.json({ user, investments });
+};
+
 export const getRoomMembers = async (req: Request, res: Response) => {
   const room = String(req.params.room);
   if (!(await forumAccess(null, req.admin, room)).exists) return res.status(404).json({ message: "Room not found" });
