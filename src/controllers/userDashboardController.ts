@@ -1,4 +1,7 @@
-import { fetchNigerianBanks, resolveBankName } from "../services/bankService.js";
+import {
+  fetchNigerianBanks,
+  resolveBankName,
+} from "../services/bankService.js";
 import { buildWalletFilter } from "../utils/walletFilters.js";
 import {
   fulfillmentStages,
@@ -149,10 +152,10 @@ export const getUserTransactionHistory = async (
         const produce = transaction.produce as any;
 
         switch (transaction.transactionType) {
-          case "investment-payment":
+          case "subscription-payment":
             return {
               id: transaction._id.toString(),
-              type: "investment-payment" as const,
+              type: "subscription-payment" as const,
               reference: transaction.transactionRef,
               transactionID: transaction.transactionID,
               title: "Farm subscription",
@@ -539,8 +542,12 @@ export const getBankAccount = async (req: Request, res: Response) => {
     "accountName +accountNumber bankCode bankName createdAt updatedAt",
   );
   if (bank && !bank.bankName) {
-    try { bank.bankName = await resolveBankName(bank.bankCode); await bank.save(); }
-    catch (error) { logError("bank.name_lookup_failed", error); }
+    try {
+      bank.bankName = await resolveBankName(bank.bankCode);
+      await bank.save();
+    } catch (error) {
+      logError("bank.name_lookup_failed", error);
+    }
   }
   return res.json({
     success: true,
@@ -561,12 +568,10 @@ export const updateBankAccount = async (req: Request, res: Response) => {
         .status(401)
         .json({ success: false, message: "Invalid credentials" });
     if (!accountName || !/^\d{10}$/.test(accountNumber ?? "") || !bankCode) {
-      return res
-        .status(400)
-        .json({
-          success: false,
-          message: "Valid account details are required",
-        });
+      return res.status(400).json({
+        success: false,
+        message: "Valid account details are required",
+      });
     }
     const existing = await BankAccount.findOne({ user: userId }).select(
       "+accountNumber +recipientCode",
