@@ -20,10 +20,19 @@ import adminDashboardRouter from "./routes/adminDashboardRoutes.js";
 import userDashboardRouter from "./routes/userDashboardRoutes.js";
 import { userTicketRouter, adminTicketRouter } from "./routes/ticketRoutes.js";
 import { userPushRouter, adminPushRouter } from "./routes/pushRoutes.js";
-import { agriLearnRouter, adminAgriLearnRouter } from "./routes/agriLearnRoutes.js";
-import { referralRouter, adminReferralRouter } from "./routes/referralRoutes.js";
+import {
+  agriLearnRouter,
+  adminAgriLearnRouter,
+} from "./routes/agriLearnRoutes.js";
+import {
+  referralRouter,
+  adminReferralRouter,
+} from "./routes/referralRoutes.js";
 import forumRouter from "./routes/forumRoutes.js";
-import { notificationRouter, adminNotificationRouter } from "./routes/notificationRoutes.js";
+import {
+  notificationRouter,
+  adminNotificationRouter,
+} from "./routes/notificationRoutes.js";
 import auditLogRouter from "./routes/auditLogRoutes.js";
 import { MongoRateLimitStore } from "./services/rateLimitStore.js";
 import { auditAdminMutation } from "./services/auditService.js";
@@ -33,7 +42,8 @@ const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 100, // limit each IP to 100 requests per windowMs
   store: new MongoRateLimitStore("api"),
-  skip: (req) => req.originalUrl.split("?")[0] === "/api/payment/paystack/webhook",
+  skip: (req) =>
+    req.originalUrl.split("?")[0] === "/api/payment/paystack/webhook",
   message: "Too many requests from this IP, please try again later",
 });
 
@@ -43,7 +53,10 @@ const authLimiter = rateLimit({
   store: new MongoRateLimitStore("auth-ip"),
   standardHeaders: true,
   legacyHeaders: false,
-  message: { status: "fail", message: "Too many authentication attempts. Please try again later." },
+  message: {
+    status: "fail",
+    message: "Too many authentication attempts. Please try again later.",
+  },
 });
 
 const accountAuthLimiter = rateLimit({
@@ -53,16 +66,21 @@ const accountAuthLimiter = rateLimit({
   legacyHeaders: false,
   store: new MongoRateLimitStore("auth-account"),
   skip: (req) => typeof req.body?.email !== "string",
-  keyGenerator: (req) => crypto
-    .createHash("sha256")
-    .update(String(req.body.email).trim().toLowerCase())
-    .digest("hex"),
-  message: { status: "fail", message: "Too many attempts for this account. Please try again later." },
+  keyGenerator: (req) =>
+    crypto
+      .createHash("sha256")
+      .update(String(req.body.email).trim().toLowerCase())
+      .digest("hex"),
+  message: {
+    status: "fail",
+    message: "Too many attempts for this account. Please try again later.",
+  },
 });
 
 export const allowedOrigins = [
   process.env.FRONTEND_URL,
   process.env.FRONTEND_LOCALHOST,
+  process.env.COOPERATIVE_API,
 ].filter(Boolean) as string[];
 
 const app = express();
@@ -82,12 +100,19 @@ if (!Number.isSafeInteger(trustProxyHops) || trustProxyHops < 0) {
 app.set("trust proxy", trustProxyHops);
 
 app.use("/api", passport.initialize());
-app.use("/api", express.json({ limit: "1mb", verify: (req, _res, buffer) => {
-  const request = req as express.Request;
-  if (request.originalUrl === "/api/payment/paystack/webhook") {
-    (req as express.Request & { rawBody?: Buffer }).rawBody = Buffer.from(buffer);
-  }
-} }));
+app.use(
+  "/api",
+  express.json({
+    limit: "1mb",
+    verify: (req, _res, buffer) => {
+      const request = req as express.Request;
+      if (request.originalUrl === "/api/payment/paystack/webhook") {
+        (req as express.Request & { rawBody?: Buffer }).rawBody =
+          Buffer.from(buffer);
+      }
+    },
+  }),
+);
 app.use("/api", compression());
 app.use("/api", cookieParser());
 app.use("/api", express.urlencoded({ extended: true }));
